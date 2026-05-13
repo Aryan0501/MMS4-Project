@@ -5,7 +5,54 @@ what changed, why, and the headline numbers. Newest at the top.
 
 ---
 
-## v4 · `unet_proper` *(current)*  — data-aware mask + ground-truth-only loss
+## v6 · `stream_week_mar2024` — first streaming run (download → train → delete)
+*Trained 2026-05-13 18:15 → 19:29 (~75 min). 31 of 58 attempted MMS1 burst files
+from 2024-03-02..08; the SDC rate-limited (HTTP 429) on the remaining 27 from
+Mar 2 specifically, so we have a complete Mar 5–8 run + a few from Mar 7. Warm-
+started from v4. Same data-aware random mask + gt-only loss as v5 was supposed to.*
+
+**Why this run mattered:** first end-to-end test of the production-style streaming
+pipeline (`src/stream_train.py`): list files from SDC, download one, train one
+inner-epoch, **delete the file**, repeat. Peak disk usage during the run was ≈ 1.6 GB
+(one in-flight CDF + cached val set), peak RAM ≈ 700 MB. Validated that we can
+stream-train indefinitely without filling local storage.
+
+**3-way comparison vs. v3 and v4 on the same RECON_SEED=13 120-s held-out burst:**
+
+| | median \|Δn\|/n | std_pred / std_true (masked region) |
+|---|---:|---:|
+| v3 imputed | 0.233 | 0.22 |
+| v4 imputed | 0.223 | 0.35 |
+| **v6 imputed** | 0.236 | 0.28 |
+| **v6 fully imputed** | **0.203** | — |
+
+- On `imputed` v6 is essentially tied with v3 and slightly worse than v4. Caveat:
+  the held-out sample is from `data_03_15`, which v4 saw during training (the
+  Mar 15 files are in v4's train set). v6 was warm-started from v4 then trained
+  on Mar 5–8, so it's been gradient-stepped *away* from Mar 15 specifics — partial
+  catastrophic forgetting that the replay buffer mitigates but doesn't eliminate.
+  A fairer eval is on a val burst v6 has never seen and v4 also has never seen,
+  which the streaming pipeline can produce on demand.
+- On `fully imputed` v6 is the **best** so far (0.20 vs v4's 0.22), suggesting the
+  diverse-week training did improve the model's ability to extrapolate into the
+  always-zero region.
+- The **temporal-variance diagnostic** (`temporal_variance.png`) is the headline
+  honest finding: ALL three models have only 22–35 % of the temporal variability
+  the truth has in the masked region. The U-Net is significantly *flatter in time*
+  than reality — confirms the user's "imputed part is constant" observation. The
+  fix is a model with explicit temporal dynamics (ConvLSTM3D, or longer
+  `--temporal-window`) — either of which is GPU work.
+
+**Known issue from this run:** SDC rate-limits at ~5 GB / minute. The script needs
+exponential backoff and request throttling; that's a small follow-up edit before
+the next stream attempt.
+
+Files: `outputs/stream_week_mar2024/{model_latest.h5, history.json,
+reconstruct_120s_*.png, reconstruct_120s.gif, temporal_variance.png}`.
+
+---
+
+## v4 · `unet_proper` *(prior best)* — data-aware mask + ground-truth-only loss
 *Trained 2026-05-13 14:32 → 15:10. CPU. 42 steps (2 rounds × 21 train files).*
 
 **The fix**, motivated by the user's observation that raw zeros in MMS data are

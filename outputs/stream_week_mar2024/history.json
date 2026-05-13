@@ -1,0 +1,333 @@
+{
+  "args": {
+    "start": "2024-03-02",
+    "end": "2024-03-08",
+    "sc": 1,
+    "out": "../outputs/stream_week_mar2024",
+    "data_root": "MMS-FPI-Data-Gaps",
+    "warm_start": "../outputs/unet_proper/model_latest.h5",
+    "temp_dir": null,
+    "inner_epochs": 1,
+    "subsample": 24,
+    "batch_size": 64,
+    "base_filters": 10,
+    "replay_per_file": 24,
+    "replay_cap": 1000,
+    "lr": 0.001,
+    "seed": 0,
+    "keep_files": false,
+    "resume": false
+  },
+  "history": [
+    {
+      "step": 1,
+      "file": "mms/data/mms1/fpi/brst/l2/des-dist/2024/03/07/mms1_fpi_brst_l2_des-dist_20240307152143_v3.4.0.cdf",
+      "n_samples": 167,
+      "train_loss": 0.02680302783846855,
+      "val_loss": 0.03534669056534767,
+      "val_masked_mse": 0.1018156185746193,
+      "elapsed_s": 67.65249848365784,
+      "dl_s": 45.520667552948
+    },
+    {
+      "step": 2,
+      "file": "mms/data/mms1/fpi/brst/l2/des-dist/2024/03/06/mms1_fpi_brst_l2_des-dist_20240306050313_v3.4.0.cdf",
+      "n_samples": 181,
+      "train_loss": 0.01592363230884075,
+      "val_loss": 0.03818168863654137,
+      "val_masked_mse": 0.11950492858886719,
+      "elapsed_s": 192.43348574638367,
+      "dl_s": 100.57823610305786
+    },
+    {
+      "step": 3,
+      "file": "mms/data/mms1/fpi/brst/l2/des-dist/2024/03/06/mms1_fpi_brst_l2_des-dist_20240306043433_v3.4.0.cdf",
+      "n_samples": 167,
+      "train_loss": 0.010755342431366444,
+      "val_loss": 0.04819329082965851,
+      "val_masked_mse": 0.12632356584072113,
+      "elapsed_s": 284.6911630630493,
+      "dl_s": 67.52400755882263
+    },
+    {
+      "step": 4,
+      "file": "mms/data/mms1/fpi/brst/l2/des-dist/2024/03/06/mms1_fpi_brst_l2_des-dist_20240306034833_v3.4.0.cdf",
+      "n_samples": 181,
+      "train_loss": 0.009310083463788033,
+      "val_loss": 0.06033141911029816,
+      "val_masked_mse": 0.13521181046962738,
+      "elapsed_s": 397.08855175971985,
+      "dl_s": 84.63972210884094
+    },
+    {
+      "step": 5,
+      "file": "mms/data/mms1/fpi/brst/l2/des-dist/2024/03/06/mms1_fpi_brst_l2_des-dist_20240306034153_v3.4.0.cdf",
+      "n_samples": 167,
+      "train_loss": 0.007350999396294355,
+      "val_loss": 0.07079164683818817,
+      "val_masked_mse": 0.1445506066083908,
+      "elapsed_s": 468.39252376556396,
+      "dl_s": 43.23318290710449
+    },
+    {
+      "step": 6,
+      "file": "mms/data/mms1/fpi/brst/l2/des-dist/2024/03/06/mms1_fpi_brst_l2_des-dist_20240306030603_v3.4.0.cdf",
+      "n_samples": 250,
+      "train_loss": 0.005966260097920895,
+      "val_loss": 0.06584616005420685,
+      "val_masked_mse": 0.14050354063510895,
+      "elapsed_s": 594.1995701789856,
+      "dl_s": 87.85971093177795
+    },
+    {
+      "step": 7,
+      "file": "mms/data/mms1/fpi/brst/l2/des-dist/2024/03/06/mms1_fpi_brst_l2_des-dist_20240306025143_v3.4.0.cdf",
+      "n_samples": 237,
+      "train_loss": 0.004896985366940498,
+      "val_loss": 0.06239970400929451,
+      "val_masked_mse": 0.12815339863300323,
+      "elapsed_s": 696.8381450176239,
+      "dl_s": 62.50961756706238
+    },
+    {
+      "step": 8,
+      "file": "mms/data/mms1/fpi/brst/l2/des-dist/2024/03/06/mms1_fpi_brst_l2_des-dist_20240306024333_v3.4.0.cdf",
+      "n_samples": 181,
+      "train_loss": 0.0039079440757632256,
+      "val_loss": 0.05798663571476936,
+      "val_masked_mse": 0.11872300505638123,
+      "elapsed_s": 783.7417080402374,
+      "dl_s": 50.05624437332153
+    },
+    {
+      "step": 9,
+      "file": "mms/data/mms1/fpi/brst/l2/des-dist/2024/03/05/mms1_fpi_brst_l2_des-dist_20240305234853_v3.4.0.cdf",
+      "n_samples": 278,
+      "train_loss": 0.003821639809757471,
+      "val_loss": 0.052856605499982834,
+      "val_masked_mse": 0.11439365148544312,
+      "elapsed_s": 932.1875545978546,
+      "dl_s": 101.71287989616394
+    },
+    {
+      "step": 10,
+      "file": "mms/data/mms1/fpi/brst/l2/des-dist/2024/03/05/mms1_fpi_brst_l2_des-dist_20240305234533_v3.4.0.cdf",
+      "n_samples": 278,
+      "train_loss": 0.003014596411958337,
+      "val_loss": 0.04677380993962288,
+      "val_masked_mse": 0.11382278054952621,
+      "elapsed_s": 1072.305288553238,
+      "dl_s": 90.04720520973206
+    },
+    {
+      "step": 11,
+      "file": "mms/data/mms1/fpi/brst/l2/des-dist/2024/03/05/mms1_fpi_brst_l2_des-dist_20240305234223_v3.4.0.cdf",
+      "n_samples": 264,
+      "train_loss": 0.003360243747010827,
+      "val_loss": 0.04778348654508591,
+      "val_masked_mse": 0.11311700195074081,
+      "elapsed_s": 1195.6010081768036,
+      "dl_s": 72.86229109764099
+    },
+    {
+      "step": 12,
+      "file": "mms/data/mms1/fpi/brst/l2/des-dist/2024/03/05/mms1_fpi_brst_l2_des-dist_20240305233903_v3.4.0.cdf",
+      "n_samples": 278,
+      "train_loss": 0.0024748772848397493,
+      "val_loss": 0.043710626661777496,
+      "val_masked_mse": 0.11271201819181442,
+      "elapsed_s": 1364.203661441803,
+      "dl_s": 113.33649158477783
+    },
+    {
+      "step": 13,
+      "file": "mms/data/mms1/fpi/brst/l2/des-dist/2024/03/05/mms1_fpi_brst_l2_des-dist_20240305233513_v3.4.0.cdf",
+      "n_samples": 320,
+      "train_loss": 0.002103337086737156,
+      "val_loss": 0.03777137026190758,
+      "val_masked_mse": 0.10827330499887466,
+      "elapsed_s": 1563.1653962135315,
+      "dl_s": 139.55768084526062
+    },
+    {
+      "step": 14,
+      "file": "mms/data/mms1/fpi/brst/l2/des-dist/2024/03/05/mms1_fpi_brst_l2_des-dist_20240305233113_v3.4.0.cdf",
+      "n_samples": 334,
+      "train_loss": 0.002995645860210061,
+      "val_loss": 0.03443644568324089,
+      "val_masked_mse": 0.10169204324483871,
+      "elapsed_s": 1725.0650424957275,
+      "dl_s": 94.91842198371887
+    },
+    {
+      "step": 15,
+      "file": "mms/data/mms1/fpi/brst/l2/des-dist/2024/03/05/mms1_fpi_brst_l2_des-dist_20240305232713_v3.4.0.cdf",
+      "n_samples": 334,
+      "train_loss": 0.0039274925366044044,
+      "val_loss": 0.029717080295085907,
+      "val_masked_mse": 0.09705810993909836,
+      "elapsed_s": 1931.6593143939972,
+      "dl_s": 142.147314786911
+    },
+    {
+      "step": 16,
+      "file": "mms/data/mms1/fpi/brst/l2/des-dist/2024/03/05/mms1_fpi_brst_l2_des-dist_20240305232313_v3.4.0.cdf",
+      "n_samples": 334,
+      "train_loss": 0.003543718485161662,
+      "val_loss": 0.030112026259303093,
+      "val_masked_mse": 0.10180243104696274,
+      "elapsed_s": 2089.7545549869537,
+      "dl_s": 90.57822394371033
+    },
+    {
+      "step": 17,
+      "file": "mms/data/mms1/fpi/brst/l2/des-dist/2024/03/05/mms1_fpi_brst_l2_des-dist_20240305231913_v3.4.0.cdf",
+      "n_samples": 334,
+      "train_loss": 0.008727017790079117,
+      "val_loss": 0.02886226214468479,
+      "val_masked_mse": 0.09557175636291504,
+      "elapsed_s": 2352.403050661087,
+      "dl_s": 193.11545586585999
+    },
+    {
+      "step": 18,
+      "file": "mms/data/mms1/fpi/brst/l2/des-dist/2024/03/05/mms1_fpi_brst_l2_des-dist_20240305221943_v3.4.0.cdf",
+      "n_samples": 84,
+      "train_loss": 0.0072301579639315605,
+      "val_loss": 0.02643144316971302,
+      "val_masked_mse": 0.09210041165351868,
+      "elapsed_s": 2424.9450209140778,
+      "dl_s": 23.642062187194824
+    },
+    {
+      "step": 19,
+      "file": "mms/data/mms1/fpi/brst/l2/des-dist/2024/03/05/mms1_fpi_brst_l2_des-dist_20240305220653_v3.4.0.cdf",
+      "n_samples": 84,
+      "train_loss": 0.006152454297989607,
+      "val_loss": 0.02789168804883957,
+      "val_masked_mse": 0.09206122905015945,
+      "elapsed_s": 2502.285048007965,
+      "dl_s": 25.509604454040527
+    },
+    {
+      "step": 20,
+      "file": "mms/data/mms1/fpi/brst/l2/des-dist/2024/03/05/mms1_fpi_brst_l2_des-dist_20240305114243_v3.4.0.cdf",
+      "n_samples": 292,
+      "train_loss": 0.008274701423943043,
+      "val_loss": 0.028549956157803535,
+      "val_masked_mse": 0.09370755404233932,
+      "elapsed_s": 2637.098718881607,
+      "dl_s": 62.39014196395874
+    },
+    {
+      "step": 21,
+      "file": "mms/data/mms1/fpi/brst/l2/des-dist/2024/03/05/mms1_fpi_brst_l2_des-dist_20240305113913_v3.4.0.cdf",
+      "n_samples": 292,
+      "train_loss": 0.004313194192945957,
+      "val_loss": 0.025479812175035477,
+      "val_masked_mse": 0.09250738471746445,
+      "elapsed_s": 2769.454200744629,
+      "dl_s": 58.20110893249512
+    },
+    {
+      "step": 22,
+      "file": "mms/data/mms1/fpi/brst/l2/des-dist/2024/03/05/mms1_fpi_brst_l2_des-dist_20240305113543_v3.4.0.cdf",
+      "n_samples": 292,
+      "train_loss": 0.0036876979283988476,
+      "val_loss": 0.02569667622447014,
+      "val_masked_mse": 0.0930129662156105,
+      "elapsed_s": 2947.953019142151,
+      "dl_s": 103.06764316558838
+    },
+    {
+      "step": 23,
+      "file": "mms/data/mms1/fpi/brst/l2/des-dist/2024/03/05/mms1_fpi_brst_l2_des-dist_20240305113213_v3.4.0.cdf",
+      "n_samples": 292,
+      "train_loss": 0.0064025092869997025,
+      "val_loss": 0.024918431416153908,
+      "val_masked_mse": 0.09251565486192703,
+      "elapsed_s": 3102.4267888069153,
+      "dl_s": 76.53415107727051
+    },
+    {
+      "step": 24,
+      "file": "mms/data/mms1/fpi/brst/l2/des-dist/2024/03/05/mms1_fpi_brst_l2_des-dist_20240305112843_v3.4.0.cdf",
+      "n_samples": 292,
+      "train_loss": 0.004404746927320957,
+      "val_loss": 0.02456437423825264,
+      "val_masked_mse": 0.09286081790924072,
+      "elapsed_s": 3250.634251832962,
+      "dl_s": 66.79381203651428
+    },
+    {
+      "step": 25,
+      "file": "mms/data/mms1/fpi/brst/l2/des-dist/2024/03/05/mms1_fpi_brst_l2_des-dist_20240305112503_v3.4.0.cdf",
+      "n_samples": 306,
+      "train_loss": 0.0037244725972414017,
+      "val_loss": 0.02379201166331768,
+      "val_masked_mse": 0.08973417431116104,
+      "elapsed_s": 3452.1869831085205,
+      "dl_s": 117.62661027908325
+    },
+    {
+      "step": 26,
+      "file": "mms/data/mms1/fpi/brst/l2/des-dist/2024/03/05/mms1_fpi_brst_l2_des-dist_20240305112033_v3.4.0.cdf",
+      "n_samples": 209,
+      "train_loss": 0.0037291839253157377,
+      "val_loss": 0.023571720346808434,
+      "val_masked_mse": 0.08975283056497574,
+      "elapsed_s": 3582.8384046554565,
+      "dl_s": 45.49816966056824
+    },
+    {
+      "step": 27,
+      "file": "mms/data/mms1/fpi/brst/l2/des-dist/2024/03/05/mms1_fpi_brst_l2_des-dist_20240305111043_v3.4.0.cdf",
+      "n_samples": 209,
+      "train_loss": 0.0033255198504775763,
+      "val_loss": 0.023234708234667778,
+      "val_masked_mse": 0.08868446946144104,
+      "elapsed_s": 3711.5194487571716,
+      "dl_s": 50.6184287071228
+    },
+    {
+      "step": 28,
+      "file": "mms/data/mms1/fpi/brst/l2/des-dist/2024/03/05/mms1_fpi_brst_l2_des-dist_20240305110043_v3.4.0.cdf",
+      "n_samples": 209,
+      "train_loss": 0.0031935502775013447,
+      "val_loss": 0.023141000419855118,
+      "val_masked_mse": 0.08884487301111221,
+      "elapsed_s": 3845.2308509349823,
+      "dl_s": 54.02754306793213
+    },
+    {
+      "step": 29,
+      "file": "mms/data/mms1/fpi/brst/l2/des-dist/2024/03/05/mms1_fpi_brst_l2_des-dist_20240305105053_v3.4.0.cdf",
+      "n_samples": 209,
+      "train_loss": 0.0031643761321902275,
+      "val_loss": 0.02278592251241207,
+      "val_masked_mse": 0.0878259539604187,
+      "elapsed_s": 3976.4722044467926,
+      "dl_s": 47.48246192932129
+    },
+    {
+      "step": 30,
+      "file": "mms/data/mms1/fpi/brst/l2/des-dist/2024/03/05/mms1_fpi_brst_l2_des-dist_20240305104103_v3.4.0.cdf",
+      "n_samples": 195,
+      "train_loss": 0.0030571601819247007,
+      "val_loss": 0.022905822843313217,
+      "val_masked_mse": 0.08849966526031494,
+      "elapsed_s": 4107.014256000519,
+      "dl_s": 46.821534872055054
+    },
+    {
+      "step": 31,
+      "file": "mms/data/mms1/fpi/brst/l2/des-dist/2024/03/05/mms1_fpi_brst_l2_des-dist_20240305103103_v3.4.0.cdf",
+      "n_samples": 209,
+      "train_loss": 0.0028820454608649015,
+      "val_loss": 0.022855473682284355,
+      "val_masked_mse": 0.08867151290178299,
+      "elapsed_s": 4252.580878973007,
+      "dl_s": 57.564146995544434
+    }
+  ]
+}
