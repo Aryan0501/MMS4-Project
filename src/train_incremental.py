@@ -83,6 +83,12 @@ def parse_args():
     p.add_argument("--out", default="outputs/run1")
     p.add_argument("--model", choices=["unet", "convlstm", "jepa"], default="unet")
     p.add_argument("--mask", choices=["wedge", "explosion"], default="wedge")
+    p.add_argument("--random-mask", action="store_true",
+                   help="sample a new random wedge position for every training file "
+                        "(validation set keeps the fixed mask for comparability). Forces a "
+                        "uniform MSE loss instead of the mask-aware weighted loss, since the "
+                        "mask varies per file. This is the fix for the data-aware-mask "
+                        "failure mode documented in RESULTS §8i.")
     p.add_argument("--temporal-window", type=int, default=0)
     p.add_argument("--features", default="", help="comma list from {pitch_angle, logb}; unet only")
     p.add_argument("--physics-head", action="store_true", help="unet only: also predict the per-energy spectrum")
@@ -167,6 +173,23 @@ def build_mask(args) -> np.ndarray:
     if args.mask == "explosion":
         return dp.load_explosion_mask(os.path.dirname(os.path.abspath(args.data_root)) or ".")
     return dp.synthetic_wedge_mask(theta_frac=0.5, phi_frac=0.5)
+
+
+def random_wedge(rng, theta_span: int = 8, phi_span: int = 16,
+                 n_energy: int = 32, n_theta: int = 16, n_phi: int = 32) -> np.ndarray:
+    """A wedge mask of the same SIZE as the default, placed at a random (θ, φ) origin.
+
+    Used by --random-mask to expose the model to every mask position during training
+    (the fix for the data-aware-mask failure documented in RESULTS §8i). Wraps
+    around both axes so the wedge is always contiguous in the toroidal sense.
+    """
+    t0 = int(rng.integers(0, n_theta))
+    p0 = int(rng.integers(0, n_phi))
+    msk = np.zeros((n_energy, n_theta, n_phi), dtype=bool)
+    for t in range(theta_span):
+        for p in range(phi_span):
+            msk[:, (t0 + t) % n_theta, (p0 + p) % n_phi] = True
+    return msk
 
 
 def _feature_flags(args):
@@ -270,6 +293,12 @@ def main():
 
     if args.model == "jepa":
         model.compile(optimizer=tf.keras.optimizers.Adam(args.lr), loss=jepa_loss())
+    elif args.random_mask:
+        # mask varies per file -- can't use the mask-aware weighted loss; plain MSE
+        # over the whole cube is what teaches the model "fill in whatever is zero".
+        # Metrics still scoped to the FIXED default mask so the curve is comparable.
+        model.compile(optimizer=tf.keras.optimizers.Adam(args.lr), loss="mse",
+                      metrics=make_masked_metrics(mask))
     elif args.model == "unet" and args.physics_head:
         model.compile(optimizer=tf.keras.optimizers.Adam(args.lr),
                       loss={"dist_out": make_masked_loss(mask), "spectrum_out": "mse"},
@@ -321,7 +350,8 @@ def main():
             if pair in completed_pairs:                   # skip files already done in this round on a prior run
                 continue
             fb = dp.read_dist_file(path, subsample=args.subsample, with_phi=use_pa)
-            Xf, Yf = assemble(fb, mask, args)
+            file_mask = random_wedge(rng) if args.random_mask else mask
+            Xf, Yf = assemble(fb, file_mask, args)
             n_f = (Xf[0].shape[0] if isinstance(Xf, list) else Xf.shape[0])
 
             if replay_X:

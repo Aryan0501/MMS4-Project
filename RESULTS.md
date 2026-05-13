@@ -255,6 +255,46 @@ the broader-validation §8e numbers, on data the trainer literally never saw). V
 imputed half tracks the true angular structure on every frame; errors fluctuate frame-to-frame
 between ~0.11 and ~0.23 but never blow up. Notebook: `notebooks/09_inpainting_movie.ipynb`.
 
+### 8i. Data-aware masking — the real test (and the headline weakness)
+
+**The problem.** In the actual MMS data, the spacecraft is spinning slowly in φ and the
+body-occluded look directions move with time. The natural "missing" bins in the raw cube are
+mostly in the data-rich, structured part of the distribution — *not* in the already-near-zero
+back-hemisphere where my synthetic fixed wedge happens to sit. The fixed mask therefore makes
+the inpainting task artificially easy, because the model gets partial credit for predicting
+near-zero in bins that were near-zero anyway.
+
+**The experiment** (notebook `notebooks/10_data_aware_mask.ipynb` (TODO), script
+`outputs/unet_full_3rounds/{data_aware_keyframes.png, data_aware_density.png}`):
+on the same 10-second held-out burst as §8f, replace the fixed wedge with a **per-frame
+data-aware mask** that hides the top 25 % of bins by PSD value — i.e. the brightest, most
+informative bins, varying with time.
+
+| Mask | Median \|Δn\|/n | Masked-region MSE |
+|---|---:|---:|
+| Fixed right-half-θ wedge (training mask) | 0.21 | 1.28 × 10⁻² |
+| **Data-aware (top-25%-PSD per frame)**   | **0.94** | **1.11 × 10⁻¹** |
+
+So the current model **fails on the data-aware mask** — density underestimated by an order of
+magnitude. The keyframes (`data_aware_keyframes.png`) show why: when the model is asked to fill
+the actually-bright left half it produces dim, unstructured output. It has been trained on one
+mask position and cannot generalise.
+
+**This is the dominant honest weakness of the current model.** It also vindicates the earlier
+§8g θ-shift finding (which was a foreshadowing of this exact failure mode — shift θ +8 puts the
+mask in the data-rich half).
+
+**The fix is straightforward and is being implemented now**: `--random-mask` in
+`train_incremental.py` samples a fresh random wedge position per training file, exposing the
+model to every mask position. Validation continues to use the fixed mask so numbers stay
+comparable. Result of a `--random-mask` run is reported in §8j when training completes.
+
+### 8j. Randomized-mask retrain  *(running — to be filled in)*
+
+> Filled when `outputs/unet_random_mask/` finishes. What we expect to learn: whether
+> randomising the training mask closes the gap between fixed-mask and data-aware-mask
+> evaluation (i.e. whether the model can be made mask-position-agnostic on the data we have).
+
 ### 8g. Mask-position generalisation
 
 A small sanity-check on what the model has actually learned: slide the wedge mask around the
