@@ -16,6 +16,7 @@ operations (download, training) are commented out by default — uncomment to ru
 | 4 | `04_train_from_scratch.ipynb` | Full training run via `train_incremental.py` | First training of a new run |
 | 5 | `05_resume_training.ipynb` | **Re-run after a crash / sleep** — appends `--resume` to the same command | Whenever a run is interrupted |
 | 6 | `06_inspect_results.ipynb` | Plot the learning curve, view final metrics, view embeddings | After any run |
+| 7 | `07_validate_with_skymap.ipynb` | Reconstructions side-by-side + per-energy spectrum + plasma-density moments via `Skymap` | After a trained run, for paper figures |
 
 ## Typical workflows
 
