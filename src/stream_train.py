@@ -80,15 +80,43 @@ def list_burst_files(sc, start, end):
 
 
 def download(name, dest):
-    if os.path.exists(dest):
+    """Download `name` from SDC to `dest`.
+
+    The SDC /file_names/science endpoint returns path-prefixed names like
+    'mms/data/mms1/fpi/.../file.cdf', but /download/science only works with the
+    BARE filename — passing the path-prefixed one silently returns 204 No
+    Content. So we strip to basename before requesting.
+    """
+    if os.path.exists(dest) and os.path.getsize(dest) > 0:
         return
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
     tmp = dest + ".part"
-    with requests.get(f"{SDC}/download/science", params={"file": name}, stream=True, timeout=600) as r:
+    bare = os.path.basename(name)
+    with requests.get(f"{SDC}/download/science", params={"file": bare}, stream=True, timeout=600) as r:
         r.raise_for_status()
-        with open(tmp, "wb") as fh:
-            for chunk in r.iter_content(chunk_size=1 << 20):
-                fh.write(chunk)
+        if r.status_code == 204 or r.headers.get("Content-Length") in ("0", None):
+            # try the about/browse direct URL as a fallback
+            # parse filename: mms<N>_<instr>_brst_l2_<descriptor>_<YYYYMMDD...>_v...cdf
+            parts = bare.split("_")
+            sc, instr, _, level, desc = parts[0], parts[1], parts[2], parts[3], parts[4]
+            stamp = parts[5]
+            yyyy, mm, dd = stamp[:4], stamp[4:6], stamp[6:8]
+            url2 = (f"https://lasp.colorado.edu/mms/sdc/public/about/browse/"
+                    f"{sc}/{instr}/brst/{level}/{desc}/{yyyy}/{mm}/{dd}/{bare}")
+            r2 = requests.get(url2, stream=True, timeout=600); r2.raise_for_status()
+            with open(tmp, "wb") as fh:
+                for chunk in r2.iter_content(chunk_size=1 << 20): fh.write(chunk)
+        else:
+            with open(tmp, "wb") as fh:
+                for chunk in r.iter_content(chunk_size=1 << 20): fh.write(chunk)
+    if os.path.getsize(tmp) == 0:
+        os.remove(tmp); raise RuntimeError(f"got 0-byte download for {bare}")
     os.replace(tmp, dest)
+
+
+def local_path(name, base_dir):
+    """Map a (possibly path-prefixed) SDC file name to a flat local path."""
+    return os.path.join(base_dir, os.path.basename(name))
 
 
 def main():
@@ -122,7 +150,7 @@ def main():
     val_dir = os.path.join(args.out, "_val_cache")
     os.makedirs(val_dir, exist_ok=True)
     for vf in val_files_remote:
-        local = os.path.join(val_dir, vf)
+        local = local_path(vf, val_dir)
         download(vf, local)
         fb = dp.read_dist_file(local, subsample=args.subsample, with_phi=True)
         X, Y = dp.build_inputs(fb, mask, use_pitch_angle=use_pa, use_logb=use_lb, temporal_window=1)
@@ -168,7 +196,7 @@ def main():
     for i, fname in enumerate(train_files_remote):
         if fname in completed:
             continue
-        local = os.path.join(tmp_dir, fname)
+        local = local_path(fname, tmp_dir)
         try:
             t_dl = time.time()
             download(fname, local)
