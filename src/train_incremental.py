@@ -89,6 +89,18 @@ def parse_args():
                         "uniform MSE loss instead of the mask-aware weighted loss, since the "
                         "mask varies per file. This is the fix for the data-aware-mask "
                         "failure mode documented in RESULTS §8i.")
+    p.add_argument("--gt-only-loss", action="store_true",
+                   help="exclude always-zero bins (from outputs/data_richness.npz) from the "
+                        "training loss and metrics. The raw zeros in the data are NOT ground "
+                        "truth (they mean 'no measurement'), so the model should not be "
+                        "penalised for putting non-zero predictions there. Whatever it learns "
+                        "to predict in those bins is its data-rich-learned prior extrapolated.")
+    p.add_argument("--data-aware-mask", action="store_true",
+                   help="restrict the synthetic occlusion mask to bins that are always-data "
+                        "(P(signal>floor)>=0.95 in outputs/data_richness.npz). The model only "
+                        "ever has to inpaint bins where we have ground truth -- and we trust "
+                        "it on the truly-missing bins for free, because they share the same "
+                        "input statistics. Pairs naturally with --gt-only-loss.")
     p.add_argument("--temporal-window", type=int, default=0)
     p.add_argument("--features", default="", help="comma list from {pitch_angle, logb}; unet only")
     p.add_argument("--physics-head", action="store_true", help="unet only: also predict the per-energy spectrum")
@@ -170,9 +182,23 @@ def _load_state(out_dir):
 
 
 def build_mask(args) -> np.ndarray:
-    if args.mask == "explosion":
-        return dp.load_explosion_mask(os.path.dirname(os.path.abspath(args.data_root)) or ".")
-    return dp.synthetic_wedge_mask(theta_frac=0.5, phi_frac=0.5)
+    base = (dp.load_explosion_mask(os.path.dirname(os.path.abspath(args.data_root)) or ".")
+            if args.mask == "explosion"
+            else dp.synthetic_wedge_mask(theta_frac=0.5, phi_frac=0.5))
+    if args.data_aware_mask:
+        richness = _load_richness(args)
+        # only mask bins that are confidently data-rich -- i.e. we have ground truth there
+        return base & richness["always_data"]
+    return base
+
+
+def _load_richness(args):
+    path = os.path.join(os.path.dirname(os.path.abspath(args.data_root)) or ".",
+                       "outputs", "data_richness.npz")
+    if not os.path.exists(path):
+        raise SystemExit(f"need outputs/data_richness.npz for --data-aware-mask / --gt-only-loss; "
+                         f"build it with `python _richness.py` first.  Looked at: {path}")
+    return dict(np.load(path))
 
 
 def random_wedge(rng, theta_span: int = 8, phi_span: int = 16,
@@ -291,6 +317,13 @@ def main():
     else:
         model, encoder = built, None
 
+    # if --gt-only-loss, load the always-zero mask and pass its inverse into the loss/metrics
+    gt_only = None
+    if args.gt_only_loss:
+        richness = _load_richness(args)
+        gt_only = ~richness["always_zero"]
+        print(f"[setup] gt-only-loss: {gt_only.mean()*100:.1f}% of bins kept in loss "
+              f"(always-zero bins excluded)", flush=True)
     if args.model == "jepa":
         model.compile(optimizer=tf.keras.optimizers.Adam(args.lr), loss=jepa_loss())
     elif args.random_mask:
@@ -298,15 +331,16 @@ def main():
         # over the whole cube is what teaches the model "fill in whatever is zero".
         # Metrics still scoped to the FIXED default mask so the curve is comparable.
         model.compile(optimizer=tf.keras.optimizers.Adam(args.lr), loss="mse",
-                      metrics=make_masked_metrics(mask))
+                      metrics=make_masked_metrics(mask, gt_only=gt_only))
     elif args.model == "unet" and args.physics_head:
         model.compile(optimizer=tf.keras.optimizers.Adam(args.lr),
-                      loss={"dist_out": make_masked_loss(mask), "spectrum_out": "mse"},
+                      loss={"dist_out": make_masked_loss(mask, gt_only=gt_only), "spectrum_out": "mse"},
                       loss_weights={"dist_out": 1.0, "spectrum_out": 0.1},
-                      metrics={"dist_out": make_masked_metrics(mask)})
+                      metrics={"dist_out": make_masked_metrics(mask, gt_only=gt_only)})
     else:
         model.compile(optimizer=tf.keras.optimizers.Adam(args.lr),
-                      loss=make_masked_loss(mask), metrics=make_masked_metrics(mask))
+                      loss=make_masked_loss(mask, gt_only=gt_only),
+                      metrics=make_masked_metrics(mask, gt_only=gt_only))
     model.summary(print_fn=lambda s: print("[model] " + s, flush=True))
 
     def _vlk(h): return "val_loss" if "val_loss" in h.history else "val_dist_out_loss"

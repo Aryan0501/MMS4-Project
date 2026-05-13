@@ -15,11 +15,13 @@ All losses operate in normalised model space ([0, 1]); convert with
 
 from __future__ import annotations
 
+import numpy as np
 import tensorflow as tf
 from tensorflow.keras import backend as K
 
 
-def make_masked_loss(mask, masked_weight: float = 10.0, signal_weight: float = 1e-3):
+def make_masked_loss(mask, masked_weight: float = 10.0, signal_weight: float = 1e-3,
+                     gt_only: np.ndarray | None = None):
     """Build a Keras loss closure for a fixed occlusion ``mask``.
 
     Parameters
@@ -27,14 +29,24 @@ def make_masked_loss(mask, masked_weight: float = 10.0, signal_weight: float = 1
     mask : bool array (32, 16, 32) — True where occluded.
     masked_weight : relative weight of occluded-bin MSE vs visible-bin MSE.
     signal_weight : weight of the integrated-signal consistency term.
+    gt_only : optional bool array (32, 16, 32) — True for bins to KEEP in the loss.
+        If provided, bins where ``gt_only`` is False get **zero gradient**. Use this with
+        the always-zero mask (``always_zero`` from data_richness.npz) so the model is never
+        penalised for putting non-zero predictions in bins that are zero in the raw data
+        only because they're unmeasured -- those zeros are not ground truth.
     """
     # (1, 32, 16, 32, 1) so it broadcasts over (batch, E, theta, phi, channel)
     m = tf.constant(mask.astype("float32")[None, ..., None])
     w = 1.0 + (masked_weight - 1.0) * m   # visible bins weight 1, masked bins weight `masked_weight`
+    if gt_only is not None:
+        # zero out the weight for bins we shouldn't trust as ground truth
+        v = tf.constant(gt_only.astype("float32")[None, ..., None])
+        w = w * v
 
     def loss(y_true, y_pred):
         sq = K.square(y_true - y_pred)
-        recon = K.sum(w * sq, axis=[1, 2, 3, 4]) / K.sum(w * tf.ones_like(sq), axis=[1, 2, 3, 4])
+        denom = K.sum(w * tf.ones_like(sq), axis=[1, 2, 3, 4])
+        recon = K.sum(w * sq, axis=[1, 2, 3, 4]) / (denom + 1e-9)
         sig_true = K.sum(y_true, axis=[1, 2, 3, 4])
         sig_pred = K.sum(y_pred, axis=[1, 2, 3, 4])
         sig = K.square(sig_true - sig_pred) / (K.square(sig_true) + 1e-6)
@@ -76,21 +88,26 @@ def energy_spectrum_target(y_true_cube):
     return (arr[..., 0].sum(axis=(2, 3)) / (arr.shape[2] * arr.shape[3])).astype("float32")
 
 
-def make_masked_metrics(mask):
+def make_masked_metrics(mask, gt_only: np.ndarray | None = None):
     """Return [masked_mse, masked_mae] metrics scoped to the occluded region only.
 
     These are *per-occluded-bin* errors, averaged over the batch — i.e. directly
-    comparable across runs and against the interpolation baseline.
+    comparable across runs and against the interpolation baseline. With ``gt_only``,
+    error is only counted on bins where ground truth is trusted (i.e. bins that
+    are NOT always-zero in the raw data).
     """
-    m = tf.constant(mask.astype("float32")[None, ..., None])
-    n_masked = tf.reduce_sum(m)   # scalar: number of occluded bins per cube
+    full = mask.astype("float32")
+    if gt_only is not None:
+        full = full * gt_only.astype("float32")
+    m = tf.constant(full[None, ..., None])
+    n_eff = tf.maximum(tf.reduce_sum(m), 1.0)
 
     def masked_mse(y_true, y_pred):
-        per_sample = K.sum(m * K.square(y_true - y_pred), axis=[1, 2, 3, 4]) / n_masked
+        per_sample = K.sum(m * K.square(y_true - y_pred), axis=[1, 2, 3, 4]) / n_eff
         return K.mean(per_sample)
 
     def masked_mae(y_true, y_pred):
-        per_sample = K.sum(m * K.abs(y_true - y_pred), axis=[1, 2, 3, 4]) / n_masked
+        per_sample = K.sum(m * K.abs(y_true - y_pred), axis=[1, 2, 3, 4]) / n_eff
         return K.mean(per_sample)
 
     return [masked_mse, masked_mae]
