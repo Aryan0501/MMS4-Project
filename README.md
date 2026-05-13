@@ -200,6 +200,20 @@ the file from memory, checkpoint — for `--rounds` passes, mixing in a small re
 catastrophic forgetting. Results table and the full model zoo are in `RESULTS.md`; open work is in
 `NEXT_STEPS.md`.
 
+### Resuming a crashed / interrupted run
+
+The trainer writes model weights, history, run state and replay buffer after **every file**, so an
+interrupted run (machine sleep, OOM, kill -9) loses at most one file's worth of work. To pick up,
+re-run the same command with `--resume` appended:
+
+```bash
+python src/train_incremental.py ... --out outputs/unet_full --resume
+```
+
+It reads `outputs/unet_full/{model_latest.h5, history.json, state.json, replay.npz}`, skips every
+`(round, file)` pair already processed, and continues. Older runs that pre-date this feature still
+work — the completed pairs are derived from `history.json` (the replay buffer just starts empty).
+
 ---
 
 ## Setup

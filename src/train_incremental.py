@@ -40,6 +40,17 @@ It never deletes your CDF files. "Deleting old data" here means freeing it from 
 between files. A production run against the live archive would add one ``os.remove(path)``
 line; it is omitted on purpose so an unattended run can't destroy local data.
 
+Resuming after a crash / machine sleep
+--------------------------------------
+The trainer saves model + history + state + replay buffer after EVERY file. To pick
+up where a previous run stopped (machine slept, OOM, kill -9, whatever), re-run the
+SAME command with ``--resume`` appended:
+
+    python src/train_incremental.py ... --out outputs/unet_full --resume
+
+It loads the weights, restores the replay buffer, and skips every (round, file) pair
+already in ``history.json``. At most one file's worth of work is lost.
+
 Examples
 --------
     python src/train_incremental.py --model unet --rounds 2 --out outputs/unet_plain
@@ -87,7 +98,69 @@ def parse_args():
     p.add_argument("--replay-cap", type=int, default=600)
     p.add_argument("--lr", type=float, default=1e-3)
     p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--resume", action="store_true",
+                   help="if --out exists with a checkpoint, load model + state + replay buffer "
+                        "and continue from where the last run stopped (handles machine sleep/crash)")
     return p.parse_args()
+
+
+# --------------------------------------------------------------------------- #
+#  Resume-from-checkpoint helpers                                              #
+#  The trainer saves after every file. On --resume it reads:                   #
+#    model_latest.h5  -> trained weights so far                                #
+#    history.json     -> per-file metrics (used to derive completed (rnd,file))#
+#    state.json       -> {round, completed: [[rnd, basename], ...]}            #
+#    replay.npz       -> replay buffer arrays (flattened: X_i_j, Y_i_j)        #
+#  so the machine can sleep / crash / be killed at any point without losing    #
+#  more than the file currently being trained on.                              #
+# --------------------------------------------------------------------------- #
+def _save_state(out_dir, history, completed_pairs, replay_X, replay_Y):
+    import io
+    with open(os.path.join(out_dir, "state.json"), "w") as fh:
+        json.dump({"completed": list(completed_pairs)}, fh)
+    # serialise replay buffer (each entry is either an ndarray or a list of ndarrays)
+    data = {}
+    for i, (x, y) in enumerate(zip(replay_X, replay_Y)):
+        xs = x if isinstance(x, list) else [x]
+        ys = y if isinstance(y, list) else [y]
+        data[f"meta_{i}"] = np.array([len(xs), len(ys)], dtype=np.int32)
+        for j, a in enumerate(xs):
+            data[f"X_{i}_{j}"] = a
+        for j, a in enumerate(ys):
+            data[f"Y_{i}_{j}"] = a
+    np.savez(os.path.join(out_dir, "replay.npz"), **data)
+
+
+def _load_state(out_dir):
+    """Return (completed_pairs, replay_X, replay_Y, history) or None if no state saved.
+
+    state.json is optional: if only history.json exists (a run from before the resume
+    feature was added), completed-pair set is derived from the history. The replay
+    buffer is empty in that case, which just makes the resumed run a bit more
+    forget-prone at first — not fatal.
+    """
+    hp = os.path.join(out_dir, "history.json")
+    if not os.path.exists(hp):
+        return None
+    history = json.load(open(hp))["history"]
+    sp = os.path.join(out_dir, "state.json")
+    if os.path.exists(sp):
+        completed = set(tuple(p) for p in json.load(open(sp))["completed"])
+    else:
+        completed = set((int(r["round"]), r["file"]) for r in history)
+    rX, rY = [], []
+    rp = os.path.join(out_dir, "replay.npz")
+    if os.path.exists(rp):
+        z = np.load(rp)
+        i = 0
+        while f"meta_{i}" in z:
+            nx, ny = z[f"meta_{i}"]
+            x = [z[f"X_{i}_{j}"] for j in range(nx)]
+            y = [z[f"Y_{i}_{j}"] for j in range(ny)]
+            rX.append(x[0] if len(x) == 1 else x)
+            rY.append(y[0] if len(y) == 1 else y)
+            i += 1
+    return completed, rX, rY, history
 
 
 def build_mask(args) -> np.ndarray:
@@ -214,8 +287,21 @@ def main():
         return None
 
     history, replay_X, replay_Y = [], [], []
+    completed_pairs = set()
+    if args.resume:
+        loaded = _load_state(args.out)
+        ckpt = os.path.join(args.out, "model_latest.h5")
+        if loaded is not None and os.path.exists(ckpt):
+            completed_pairs, replay_X, replay_Y, history = loaded
+            model.load_weights(ckpt)
+            print(f"[resume] loaded weights + state: {len(completed_pairs)} (round,file) pairs done, "
+                  f"{len(history)} history entries, replay buffer = {sum((a[0].shape[0] if isinstance(a,list) else a.shape[0]) for a in replay_X)} samples",
+                  flush=True)
+        else:
+            print("[resume] no checkpoint found — starting fresh", flush=True)
+
     rng = np.random.default_rng(args.seed)
-    step = 0; t0 = time.time()
+    step = len(history); t0 = time.time()
     use_pa, _ = _feature_flags(args)
 
     def _concat_X(Xf, extra):  # Xf and extras are either arrays or [a,b] lists (jepa)
@@ -231,6 +317,9 @@ def main():
     for rnd in range(args.rounds):
         for k in rng.permutation(len(train_files)):
             path = train_files[k]
+            pair = (rnd + 1, os.path.basename(path))
+            if pair in completed_pairs:                   # skip files already done in this round on a prior run
+                continue
             fb = dp.read_dist_file(path, subsample=args.subsample, with_phi=use_pa)
             Xf, Yf = assemble(fb, mask, args)
             n_f = (Xf[0].shape[0] if isinstance(Xf, list) else Xf.shape[0])
@@ -264,9 +353,11 @@ def main():
                     tot -= (drop[0].shape[0] if isinstance(drop, list) else drop.shape[0])
 
             del fb, Xf, Yf, Xtr, Ytr, h; gc.collect()
+            completed_pairs.add(pair)
             model.save(os.path.join(args.out, "model_latest.h5"))
             with open(os.path.join(args.out, "history.json"), "w") as fh:
                 json.dump({"args": vars(args), "history": history}, fh, indent=2)
+            _save_state(args.out, history, completed_pairs, replay_X, replay_Y)
 
     # --- final evaluation ---
     ev = {k: float(v) for k, v in model.evaluate(Xv, Yv, verbose=0, return_dict=True).items()}

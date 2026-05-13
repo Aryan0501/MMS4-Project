@@ -147,16 +147,41 @@ Learning curves: `outputs/unet_full/loss_curves.png`, `outputs/unet_plain/loss_c
 train and validation loss after each incremental step, with the energy-shell-mean baseline MSE
 drawn as a reference line.
 
-### 8b. JEPA-lite and embeddings  *(implemented + smoke-tested; not run full-size on CPU)*
+### 8b. Multi-round training, resume-after-crash
 
-`--model jepa` trains the I-JEPA-lite model from §4 — predict the full cube's embedding from the
-masked cube's embedding, loss in latent space, no decoder. `--dump-embeddings` (works for `unet`
-and `jepa`) runs the encoder on the validation cubes after training and saves `embeddings.npy`
-plus `embeddings_pca.png` (2-D PCA scatter, coloured by time order). The intent: the embedding is a
-compact fingerprint of the plasma state, so the scatter should show clusters / trajectories that
-correspond to regime structure and outliers at unusual events — a representation-learning route to
-"detect changes in the magnetic field." Running it to convergence wants a GPU; the code path is
-verified end-to-end.
+A 3-round version of the full config was run on the same 21 train / 5 val files
+(`outputs/unet_full_3rounds/`). The first attempt ran overnight and was interrupted at step
+27 / 63 when the host slept; the trainer's per-file checkpoints let it be **resumed**
+(`--resume`) from exactly that point on rerun, with no manual surgery. The partial run by
+itself already shows the training behaviour we wanted to confirm:
+
+- Validation masked-MSE fell monotonically across round 1 (0.071 → 0.052 over 21 files),
+  and **kept falling into round 2** rather than spiking back up (0.045 → 0.041 → 0.034 →
+  0.032 → 0.027 → 0.025 by step 27). The replay buffer is doing its job — no catastrophic
+  forgetting at the round boundary.
+- Partial-checkpoint evaluation: masked MSE = **0.0249**, MAE = **0.115** at step 27 — already
+  an ~8× improvement over the energy-shell-mean baseline (~0.20), still descending. *(See
+  `outputs/unet_full_3rounds/{final_metrics.json,loss_curves.png}`.)*
+
+The resumed completion of the 3-round run (steps 28–63) is reported in §8d below.
+
+### 8c. JEPA-lite
+
+`--model jepa --dump-embeddings` was run on the same 21 train / 5 val files for 2 rounds
+(`outputs/jepa/`). Final validation JEPA loss **0.96**; training loss fell from 1.10 → ~0.4.
+*Honest:* the validation loss oscillated wildly across files (peaks 1.3 → 7.1 → 1.9 → 0.9 →
+6.3) — the simple variance regulariser on a single shared encoder isn't enough to fully stop
+embedding-collapse / drift at this batch size, especially without an EMA target encoder.
+A proper VICReg- or I-JEPA-style implementation (EMA target, covariance regulariser, larger
+batches) on a GPU would stabilise this. **The embedding artifacts still exist**
+(`outputs/jepa/embeddings.npy`, `embeddings_pca.png`) — useful as a starting point for
+plasma-state-fingerprint visualisation, just not from a fully-converged encoder yet.
+
+### 8d. Completed 3-round U-Net (continues §8b)
+
+> Filled when the resumed run completes (`outputs/unet_full_3rounds/`). What we expect to
+> learn from it: whether the curve continues its monotonic descent through all three rounds
+> (suggesting "more data" helps further), and whether round-3 forgetting appears.
 
 ## 9. Honest limitations
 
