@@ -160,7 +160,8 @@ Aurora_Project/
 │   ├── losses.py               # masked-region loss + metrics (per-batch density proxy, not a stale tensor)
 │   ├── baseline.py             # interpolation baselines the model must beat
 │   └── train_incremental.py    # streaming train/free-memory loop; tracks train+val loss per file
-├── outputs/                    # run artifacts: model_latest.h5, history.json, final_metrics.json, loss_curves.png
+├── notebooks/                  # offline-runnable backups of the pipeline (download → explore → baseline → train → resume → inspect)
+├── outputs/                    # run artifacts: model_latest.h5, history.json, state.json, replay.npz, final_metrics.json, loss_curves.png
 ├── RESULTS.md                  # methodology + results + model zoo, written paper-ready
 ├── NEXT_STEPS.md               # prioritised path to a publishable result
 ├── MMS-FPI-Data-Gaps/          # Original internship notebooks + reference toolkit
