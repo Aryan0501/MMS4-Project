@@ -73,7 +73,7 @@ import tensorflow as tf
 
 import data_pipeline as dp
 from model import build_model, bottleneck_encoder
-from losses import make_masked_loss, make_masked_metrics, energy_spectrum_target, jepa_loss
+from losses import make_masked_loss, make_masked_metrics, energy_spectrum_target, jepa_loss, make_uniform_loss
 from baseline import evaluate_baselines
 
 
@@ -202,12 +202,16 @@ def _load_richness(args):
 
 
 def random_wedge(rng, theta_span: int = 8, phi_span: int = 16,
-                 n_energy: int = 32, n_theta: int = 16, n_phi: int = 32) -> np.ndarray:
+                 n_energy: int = 32, n_theta: int = 16, n_phi: int = 32,
+                 confine_to: np.ndarray | None = None) -> np.ndarray:
     """A wedge mask of the same SIZE as the default, placed at a random (θ, φ) origin.
 
-    Used by --random-mask to expose the model to every mask position during training
-    (the fix for the data-aware-mask failure documented in RESULTS §8i). Wraps
-    around both axes so the wedge is always contiguous in the toroidal sense.
+    Used by --random-mask to expose the model to every mask position during training.
+    Wraps around both axes so the wedge is always contiguous in the toroidal sense.
+
+    With ``confine_to`` (a 32x16x32 bool array), the returned mask is intersected with
+    that region — so e.g. random wedge ∩ always-data keeps the mask inside data-rich
+    bins regardless of which random origin gets sampled.
     """
     t0 = int(rng.integers(0, n_theta))
     p0 = int(rng.integers(0, n_phi))
@@ -215,6 +219,8 @@ def random_wedge(rng, theta_span: int = 8, phi_span: int = 16,
     for t in range(theta_span):
         for p in range(phi_span):
             msk[:, (t0 + t) % n_theta, (p0 + p) % n_phi] = True
+    if confine_to is not None:
+        msk = msk & confine_to
     return msk
 
 
@@ -319,18 +325,26 @@ def main():
 
     # if --gt-only-loss, load the always-zero mask and pass its inverse into the loss/metrics
     gt_only = None
-    if args.gt_only_loss:
+    _ad = None     # always-data, used by random-mask if data-aware confinement is active
+    if args.gt_only_loss or args.data_aware_mask:
         richness = _load_richness(args)
-        gt_only = ~richness["always_zero"]
-        print(f"[setup] gt-only-loss: {gt_only.mean()*100:.1f}% of bins kept in loss "
-              f"(always-zero bins excluded)", flush=True)
+        gt_only = ~richness["always_zero"] if args.gt_only_loss else None
+        _ad = richness["always_data"] if args.data_aware_mask else None
+        if args.gt_only_loss:
+            print(f"[setup] gt-only-loss: {gt_only.mean()*100:.1f}% of bins kept in loss "
+                  f"(always-zero bins excluded)", flush=True)
+        if args.data_aware_mask and args.random_mask:
+            print(f"[setup] random masks confined to always-data region "
+                  f"({_ad.mean()*100:.1f}% of bins)", flush=True)
     if args.model == "jepa":
         model.compile(optimizer=tf.keras.optimizers.Adam(args.lr), loss=jepa_loss())
     elif args.random_mask:
-        # mask varies per file -- can't use the mask-aware weighted loss; plain MSE
-        # over the whole cube is what teaches the model "fill in whatever is zero".
-        # Metrics still scoped to the FIXED default mask so the curve is comparable.
-        model.compile(optimizer=tf.keras.optimizers.Adam(args.lr), loss="mse",
+        # mask varies per file -- can't use the mask-aware weighted loss; uniform MSE
+        # over the cube is what teaches the model "fill in whatever is zero". With
+        # --gt-only-loss the always-zero bins are excluded so the model never gets
+        # punished for putting non-zero predictions there.
+        model.compile(optimizer=tf.keras.optimizers.Adam(args.lr),
+                      loss=make_uniform_loss(gt_only=gt_only),
                       metrics=make_masked_metrics(mask, gt_only=gt_only))
     elif args.model == "unet" and args.physics_head:
         model.compile(optimizer=tf.keras.optimizers.Adam(args.lr),
@@ -384,7 +398,12 @@ def main():
             if pair in completed_pairs:                   # skip files already done in this round on a prior run
                 continue
             fb = dp.read_dist_file(path, subsample=args.subsample, with_phi=use_pa)
-            file_mask = random_wedge(rng) if args.random_mask else mask
+            if args.random_mask:
+                # if --data-aware-mask too, confine the random wedge to the always-data region
+                # (loaded once into _ad below)
+                file_mask = random_wedge(rng, confine_to=_ad if args.data_aware_mask else None)
+            else:
+                file_mask = mask
             Xf, Yf = assemble(fb, file_mask, args)
             n_f = (Xf[0].shape[0] if isinstance(Xf, list) else Xf.shape[0])
 

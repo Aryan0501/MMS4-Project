@@ -101,14 +101,69 @@ scratch by the `src/` pipeline that v2–v4 use.
 
 ---
 
-## Auxiliary models *(implemented + smoke-tested, not run to convergence on CPU)*
+## v5 · `unet_v5` *(training now)* — random data-aware masks + uniform gt-only loss
+*Launched 2026-05-13 18:00. Training in background, ~50 min.*
 
+Strict version of v4 inspired by the user's observation that v4's FULLY IMPUTED
+panel still had patches of dim output near the visible/missing boundary:
+
+- `--random-mask` — fresh random wedge position **per training file**, never the
+  same shape twice. Forces the model to handle gaps at every position.
+- `--data-aware-mask` — random wedges are **confined to the always-data region**
+  (35% of bins). Mask never overlaps an always-zero bin, so the model is only ever
+  asked to inpaint bins where ground truth exists.
+- `--gt-only-loss` — `make_uniform_loss(gt_only=...)` excludes always-zero bins
+  from the uniform MSE loss. Fixed an earlier bug where `--random-mask` was
+  silently falling back to plain MSE and ignoring `--gt-only-loss`.
+- Validation set still uses the fixed default mask (upper-left quadrant of
+  always-data) — different from the random training masks, so no positional
+  leakage.
+
+Results filled in §8j of RESULTS.md when training finishes.
+
+---
+
+## Auxiliary models *(implemented + smoke-tested, not yet run on CPU)*
+
+- **I-JEPA proper** (`src/model.py:build_ijepa`): separate EMA target encoder
+  (0.99 momentum) + invariance loss + VICReg-style variance and covariance
+  regularisation. The properly-resourced version of JEPA-lite. Returns
+  `(train_model, online, target, ema_update_fn)`; trainer calls `ema_update_fn`
+  after every optimiser step. 121 K params at `base_filters=8`. Needs GPU
+  and bigger batches to stabilise the regulariser.
+- **Energy-axis attention U-Net** (`src/model.py:build_energy_attention_unet`):
+  drop-in replacement for `build_unet3d` with a 4-head self-attention block
+  over the **energy axis at the bottleneck**. Plasma motivation: bin-to-bin
+  energy structure carries information that pure 3-D conv locality misses
+  (e.g. an electron beam at one energy correlates with adjacent energies).
+  627 K params at `base_filters=8` — about 5× the plain U-Net, would benefit
+  from a GPU.
 - **JEPA-lite** (`outputs/jepa/`): predict the full-cube embedding from the
-  masked-cube embedding in latent space, no decoder. Smoke-runs work; JEPA loss
-  oscillates on CPU because the variance regulariser isn't enough by itself —
-  needs an EMA target encoder + VICReg covariance regulariser, which is GPU work.
+  masked-cube embedding in latent space, no decoder. Runs; the variance term
+  oscillates without an EMA target, which is why I-JEPA proper exists now.
 - **ConvLSTM** (`src/model.py:build_convlstm`): the rigorous "cube through time"
-  model with convolution inside the recurrence. Smoke-tested; full training on
-  CPU is impractical.
+  model with convolution inside the recurrence. Smoke-tested; full CPU run
+  impractical.
 - **Physics auxiliary head** (`--physics-head`): adds a per-energy-spectrum
   prediction output. Smoke-tested; can be combined with any of the above.
+
+---
+
+## Data scale (what's actually available)
+
+Surveyed the SDC API for burst-mode des-dist availability **in just 6 months
+(Jan–Jun 2024)**, all four spacecraft:
+
+| Spacecraft | Files |
+|---|---:|
+| MMS1 | 2,443 |
+| MMS2 | 2,427 |
+| MMS3 | 2,390 |
+| MMS4 | 2,394 |
+| **6-month total** | **9,654** |
+
+At ~0.4 GB/file that's **~3.9 TB** for half a year. The full archive runs March
+2015 → present (~10 years), plausibly 70–80 TB of just this product. Our 26
+files were **0.27 % of half a year of one spacecraft**. Data is not the
+constraint — compute (GPU hours) and the streaming pipeline are. Both are now
+solved in `src/`; the next-step gating factor is GPU access.

@@ -210,3 +210,87 @@ def bottleneck_encoder(unet_model: Model) -> Model:
     b = unet_model.get_layer("bottleneck_a2").output
     emb = layers.GlobalAveragePooling3D(name="embed")(b)
     return Model(unet_model.input, emb, name="unet_embedder")
+
+
+# --------------------------------------------------------------------------- #
+#  I-JEPA (proper) — EMA target encoder + variance + covariance regularisation #
+# --------------------------------------------------------------------------- #
+def build_ijepa(base_filters: int = 16, in_channels: int = 1):
+    """Image-style JEPA, fixed up: separate EMA target encoder + invariance + variance +
+    covariance regularisation à la VICReg.
+
+    Architecture:
+        online_encoder      learnable; produces z_pred from masked cube
+        target_encoder      EMA copy of online_encoder; produces z_tgt from full cube
+        predictor_MLP       maps z_pred -> z_pred (learned, small)
+        loss = invariance(z_pred, sg(z_tgt))               # MSE in latent space
+              + var_weight * variance_hinge(z_pred)         # std >= 1 per dim
+              + cov_weight * cov_off_diag(z_pred)           # decorrelate dims
+        target_encoder weights <- 0.99 * target + 0.01 * online  every step
+
+    Returns (training_model, online_encoder, target_encoder, ema_update_fn).
+    The training script calls ema_update_fn() after every optimiser step.
+    """
+    online = _cube_encoder(base_filters, in_channels, "online_enc")
+    target = _cube_encoder(base_filters, in_channels, "target_enc")
+    target.set_weights(online.get_weights())
+    target.trainable = False    # never updated by gradient
+
+    masked_in = layers.Input(shape=(32, 16, 32, in_channels), name="masked_in")
+    full_in   = layers.Input(shape=(32, 16, 32, in_channels), name="full_in")
+
+    z_vis = online(masked_in)
+    z_pred = layers.Dense(EMBED_DIM, activation="relu", name="pred_h1")(z_vis)
+    z_pred = layers.Dense(EMBED_DIM, name="z_pred")(z_pred)
+    z_tgt  = layers.Lambda(lambda t: tf.stop_gradient(t), name="z_target")(target(full_in))
+
+    out = layers.Concatenate(axis=-1, name="ijepa_out")([z_pred, z_tgt])
+    train_model = Model([masked_in, full_in], out, name="ijepa_proper")
+
+    EMA = 0.99
+    def ema_update():
+        for w_t, w_o in zip(target.weights, online.weights):
+            w_t.assign(EMA * w_t + (1.0 - EMA) * w_o)
+    return train_model, online, target, ema_update
+
+
+# --------------------------------------------------------------------------- #
+#  Energy-axis attention U-Net                                                  #
+# --------------------------------------------------------------------------- #
+def build_energy_attention_unet(base_filters: int = 16, in_channels: int = 1) -> Model:
+    """3-D U-Net with a self-attention block over the ENERGY axis at the bottleneck.
+
+    Plasma-physical motivation: the 32 energy bins carry a smooth spectrum (low-E peak,
+    mid-E body, high-E tail), and the relationship between bins matters. Pure 3-D conv
+    locality misses long-range energy structure (e.g. an electron beam at one energy
+    can correlate with deviations at the adjacent energies). One light multi-head
+    self-attention layer over energy at the bottleneck adds that long-range coupling
+    without blowing up parameters.
+
+    Same 32x16x32xC input / 32x16x32x1 sigmoid output as build_unet3d, drop-in
+    replacement.
+    """
+    pool = (2, 1, 2)
+    inp = layers.Input(shape=(32, 16, 32, in_channels), name="dist_in")
+    e1 = _conv_block(inp, base_filters, "enc1")
+    p1 = layers.MaxPool3D(pool, name="pool1")(e1)
+    e2 = _conv_block(p1, base_filters * 2, "enc2")
+    p2 = layers.MaxPool3D(pool, name="pool2")(e2)
+    b = _conv_block(p2, base_filters * 4, "bottleneck")          # (8, 16, 8, 4F)
+
+    # energy-axis attention: collapse (theta, phi) -> tokens, attend across the 8 energies
+    shape = tf.keras.backend.int_shape(b)                         # (None, 8, 16, 8, 4F)
+    seq = layers.Reshape((shape[1], shape[2] * shape[3] * shape[4]), name="b_to_seq")(b)  # (8, 16*8*4F)
+    seq = layers.LayerNormalization(name="b_ln")(seq)
+    seq = layers.MultiHeadAttention(num_heads=4, key_dim=max(8, base_filters), name="b_attn")(seq, seq)
+    b_attn = layers.Reshape(shape[1:], name="seq_to_b")(seq)
+    b = layers.Add(name="b_add")([b, b_attn])                     # residual
+
+    u2 = layers.UpSampling3D(pool, name="up2")(b)
+    u2 = layers.Concatenate(name="skip2")([u2, e2])
+    d2 = _conv_block(u2, base_filters * 2, "dec2")
+    u1 = layers.UpSampling3D(pool, name="up1")(d2)
+    u1 = layers.Concatenate(name="skip1")([u1, e1])
+    d1 = _conv_block(u1, base_filters, "dec1")
+    out = layers.Conv3D(1, 1, padding="same", activation="sigmoid", name="dist_out")(d1)
+    return Model(inp, out, name="unet3d_energy_attn")

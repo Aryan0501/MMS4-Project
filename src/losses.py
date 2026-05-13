@@ -55,6 +55,26 @@ def make_masked_loss(mask, masked_weight: float = 10.0, signal_weight: float = 1
     return loss
 
 
+def make_uniform_loss(gt_only: np.ndarray | None = None):
+    """Plain MSE over the cube, optionally excluding always-zero bins.
+
+    Use this with --random-mask (where the mask varies per file so a mask-aware
+    weighted loss can't be precompiled) combined with --gt-only-loss (where we
+    want zero gradient on bins whose "ground truth" of 0 is just unmeasured).
+    """
+    if gt_only is None:
+        return "mse"
+    v = tf.constant(gt_only.astype("float32")[None, ..., None])
+    n_eff = tf.maximum(tf.reduce_sum(v) * tf.cast(1, tf.float32), 1.0)
+
+    def loss(y_true, y_pred):
+        sq = K.square(y_true - y_pred) * v
+        per_sample = K.sum(sq, axis=[1, 2, 3, 4]) / n_eff
+        return K.mean(per_sample)
+
+    return loss
+
+
 def jepa_loss(var_weight: float = 1.0, eps: float = 1e-4):
     """Loss for the I-JEPA-lite model.
 
