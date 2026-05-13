@@ -112,8 +112,10 @@ def main():
     print("[stream] downloading validation set (kept on disk) ...", flush=True)
     Xv_list, Yv_list = [], []
     use_pa, use_lb = True, True
-    mask = build_mask(argparse.Namespace(
-        mask="wedge", data_aware_mask=True, data_root=args.data_root))
+    # build the data-aware mask -- use the ABSOLUTE repo root so this works no matter what
+    # working directory the script is launched from
+    fake_args = argparse.Namespace(mask="wedge", data_aware_mask=True, data_root=os.path.join(ROOT, "MMS-FPI-Data-Gaps"))
+    mask = build_mask(fake_args)
     print(f"[stream] mask (data-aware wedge): {mask.mean()*100:.1f}% of bins", flush=True)
     rng = np.random.default_rng(args.seed)
 
@@ -139,7 +141,7 @@ def main():
     if args.warm_start and os.path.exists(args.warm_start):
         model.load_weights(args.warm_start)
         print(f"[stream] warm-started from {args.warm_start}", flush=True)
-    richness = _load_richness(argparse.Namespace(data_root=args.data_root))
+    richness = _load_richness(fake_args)
     gt_only = ~richness["always_zero"]
     model.compile(optimizer=tf.keras.optimizers.Adam(args.lr),
                   loss=make_uniform_loss(gt_only=gt_only),
