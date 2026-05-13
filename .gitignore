@@ -2,6 +2,9 @@ __pycache__/
 .ipynb_checkpoints/
 *.pyc
 * copy*
+.claude/
+outputs/*.log
+outputs/*.flag
 
 # Large data files
 data/

@@ -153,32 +153,52 @@ Applied transfer learning: froze the convolutional encoder weights from the best
 
 ```
 Aurora_Project/
-├── MMS-FPI-Data-Gaps/          # Main working directory
-│   ├── mmspy/
-│   │   └── moments.py          # Physics: density, velocity, pressure, heat flux
-│   ├── skymaps/
-│   │   ├── skymap.py           # Skymap class, MomentsTimeSeries, plotting
-│   │   ├── generator.py        # PyTorch Dataset with occlusion masking
-│   │   └── helper.py
-│   ├── logo/                   # Aurora Engineering branding
-│   ├── pitch_angle_heatmaps/   # Generated output figures
-│   ├── data-preprocessing.ipynb
-│   ├── pitch_angle_calculation.ipynb
-│   ├── moments_validation.ipynb
-│   ├── MODEL_3.ipynb
-│   ├── MODEL_4.ipynb
-│   ├── Model_5.ipynb
-│   ├── Model_7.ipynb
-│   ├── Model_8.ipynb
-│   ├── fine_tuning.ipynb
-│   ├── final_evaluation.ipynb
-│   ├── download_cdfs.py
-│   ├── environment.yml
-│   └── README.md               # Reference repo README
+├── src/                        # Debugged streaming pipeline + model zoo (new — see RESULTS.md)
+│   ├── data_pipeline.py        # CDF reading, log-transform + normalisation, masking, temporal windows
+│   ├── features.py             # FGM B-field loading → pitch-angle map + log|B| feature channels
+│   ├── model.py                # 3-D U-Net (+ temporal channels / B-field conditioning / physics head); ConvLSTM
+│   ├── losses.py               # masked-region loss + metrics (per-batch density proxy, not a stale tensor)
+│   ├── baseline.py             # interpolation baselines the model must beat
+│   └── train_incremental.py    # streaming train/free-memory loop; tracks train+val loss per file
+├── outputs/                    # run artifacts: model_latest.h5, history.json, final_metrics.json, loss_curves.png
+├── RESULTS.md                  # methodology + results + model zoo, written paper-ready
+├── NEXT_STEPS.md               # prioritised path to a publishable result
+├── MMS-FPI-Data-Gaps/          # Original internship notebooks + reference toolkit
+│   ├── mmspy/moments.py        # Physics: density, velocity, pressure, heat flux
+│   ├── skymaps/                # skymap.py, generator.py (occlusion masking), explosion.npy (real mask)
+│   ├── data-preprocessing.ipynb, pitch_angle_calculation.ipynb, moments_validation.ipynb
+│   ├── MODEL_3.ipynb … Model_8.ipynb, fine_tuning.ipynb, final_evaluation.ipynb
+│   ├── download_cdfs.py        # rewritten: queries the SDC API for des-dist/des-moms/fgm by date range
+│   ├── environment.yml, README.md
+│   └── data_03_02/, data_03_15/   # downloaded burst CDFs (gitignored)
 └── Untitled-1.ipynb            # Exploratory CDF/moments scratch notebook
 ```
 
-> **Note:** Large data files (`.cdf`, `.npy`, `.h5`, `.pkl`, `data_*/`) are excluded from version control via `.gitignore`. The full MMS dataset must be downloaded from the NASA SDC on demand using `download_cdfs.py`.
+> **Note:** Large data files (`.cdf`, `.npy`, `.h5`, `.pkl`, `data_*/`) are excluded from version control via `.gitignore`. Download MMS data on demand with `MMS-FPI-Data-Gaps/download_cdfs.py` (try `--list-only` first).
+
+## Running the streaming trainer
+
+```bash
+pip install tensorflow==2.9.1 numpy==1.23.2 scipy==1.9.0 cdflib==1.3.10 matplotlib
+
+# plain 3-D U-Net
+python src/train_incremental.py --data-root MMS-FPI-Data-Gaps --out outputs/unet_plain --model unet
+
+# headline: U-Net + temporal context + magnetic-field features
+python src/train_incremental.py --data-root MMS-FPI-Data-Gaps --out outputs/unet_full \
+    --model unet --temporal-window 1 --features pitch_angle,logb
+
+# realistic occlusion mask / ConvLSTM "cube through time" / physics auxiliary head
+python src/train_incremental.py ... --mask explosion
+python src/train_incremental.py ... --model convlstm --temporal-window 1
+python src/train_incremental.py ... --model unet --physics-head
+```
+
+It discovers every `*des-dist*.cdf` under `--data-root`, holds out 20 % of *files* for validation,
+then processes the rest one at a time — fit a couple of epochs, record train+validation loss, free
+the file from memory, checkpoint — for `--rounds` passes, mixing in a small replay buffer to resist
+catastrophic forgetting. Results table and the full model zoo are in `RESULTS.md`; open work is in
+`NEXT_STEPS.md`.
 
 ---
 

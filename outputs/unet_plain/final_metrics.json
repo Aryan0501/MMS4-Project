@@ -1,0 +1,17 @@
+{
+  "model": {
+    "loss": 0.02653551660478115,
+    "masked_mse": 0.025631926953792572,
+    "masked_mae": 0.13076423108577728
+  },
+  "baselines": {
+    "energy_shell_mean": {
+      "masked_mse": 0.20354723930358887,
+      "masked_mae": 0.4240436255931854
+    },
+    "constant_mean": {
+      "masked_mse": 0.20852558314800262,
+      "masked_mae": 0.4330349862575531
+    }
+  }
+}
