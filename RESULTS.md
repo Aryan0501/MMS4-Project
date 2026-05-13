@@ -179,9 +179,26 @@ plasma-state-fingerprint visualisation, just not from a fully-converged encoder 
 
 ### 8d. Completed 3-round U-Net (continues §8b)
 
-> Filled when the resumed run completes (`outputs/unet_full_3rounds/`). What we expect to
-> learn from it: whether the curve continues its monotonic descent through all three rounds
-> (suggesting "more data" helps further), and whether round-3 forgetting appears.
+The resumed run finished all 63 incremental steps (`outputs/unet_full_3rounds/`):
+
+| | Masked MSE | Masked MAE | vs. baseline |
+|---|---:|---:|---:|
+| Energy-shell-mean baseline | 0.2035 | 0.4237 | 1.0× |
+| **3-D U-Net (full config, 3 rounds)** | **0.01984** | **0.0881** | **≈ 10.3× better** |
+
+**Round-by-round** (mean masked MSE within each round):  R1 = 0.067 → R2 = 0.035 → R3 = 0.023.
+The curve descends monotonically across rounds. Tiny wobble at the R2 → R3 boundary
+(0.027 → 0.034 → recovers to 0.020 within a few files) — visible but small, not catastrophic
+forgetting. Best single step was **0.01966** at step 61 (round 3); the round-3 plateau sits at
+0.019–0.022, so additional rounds on the same data have diminishing returns. **The next gain
+comes from more / more-diverse data, not more epochs** (NEXT_STEPS §2 — the GPU run).
+
+The resume mechanism (added mid-stream after the first attempt died overnight) was used in
+anger here — it picked up at step 27 with no manual surgery, validation loss continued exactly
+where it left off (no spurious jump from re-init), and the run completed normally.
+
+`outputs/unet_full_3rounds/{loss_curves.png, embeddings_pca.png}` show the learning curve and
+the bottleneck-embedding 2-D PCA scatter.
 
 ## 9. Honest limitations
 

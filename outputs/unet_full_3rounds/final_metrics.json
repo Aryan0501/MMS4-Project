@@ -1,8 +1,8 @@
 {
   "model": {
-    "loss": 0.025218850001692772,
-    "masked_mse": 0.024873729795217514,
-    "masked_mae": 0.11526340991258621
+    "loss": 0.016566209495067596,
+    "masked_mse": 0.01983761042356491,
+    "masked_mae": 0.08811697363853455
   },
   "baselines": {
     "energy_shell_mean": {
@@ -13,6 +13,5 @@
       "masked_mse": 0.20849104225635529,
       "masked_mae": 0.43278858065605164
     }
-  },
-  "note": "partial run: 27 of 63 incremental steps; machine slept overnight"
+  }
 }
