@@ -1,7 +1,15 @@
 # Next Steps
 
-Ordered roughly by leverage. ✅ = built/wired in this session; the rest is open.
-Items 1–3 turn this from a working prototype into something paper-worthy.
+Ordered roughly by leverage. ✅ = built/wired; the rest is open.
+Items 1–4 turn this from a working prototype into something paper-worthy.
+
+## 0. Randomised-mask training  *(open — highest leverage, smallest effort)*
+The θ-position failure in §8g (the model breaks when the mask is shifted into the originally-
+visible half of θ) is entirely an artifact of training on **one fixed mask**. Fix: at each
+file, sample a random (θ-offset, φ-offset) for the wedge before applying it; or just switch to
+`--mask explosion` (the realistic energy-dependent mask, which already rotates per energy).
+Either resolves the only embarrassing failure mode the current model has, with no new code
+beyond a couple of lines in `data_pipeline.apply_mask`.
 
 ## 1. Validate at the moments level  *(open — highest priority)*
 Reconstruction MSE is in normalised log space. What a physicist (and a reviewer) cares about is

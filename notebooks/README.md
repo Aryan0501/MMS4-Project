@@ -17,7 +17,8 @@ operations (download, training) are commented out by default — uncomment to ru
 | 5 | `05_resume_training.ipynb` | **Re-run after a crash / sleep** — appends `--resume` to the same command | Whenever a run is interrupted |
 | 6 | `06_inspect_results.ipynb` | Plot the learning curve, view final metrics, view embeddings | After any run |
 | 7 | `07_validate_with_skymap.ipynb` | Reconstructions side-by-side + per-energy spectrum + plasma-density moments via `Skymap` | After a trained run, for paper figures |
-| 8 | `08_monte_carlo.ipynb` | Continuous-burst reconstruction + error histogram + mask-position robustness sweep | Stress-test a trained run |
+| 8 | `08_monte_carlo.ipynb` | Mask-position robustness sweep (and continuous-burst density + error histogram, kept for completeness) | Stress-test a trained run |
+| 9 | `09_inpainting_movie.ipynb` | **The headline figure** — TRUE / MASKED / IMPUTED side-by-side animation over 10 s of held-out burst data | After a trained run |
 
 ## Typical workflows
 
