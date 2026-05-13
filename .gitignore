@@ -1,0 +1,12 @@
+__pycache__/
+.ipynb_checkpoints/
+*.pyc
+* copy*
+
+# Large data files
+data/
+data_*/
+*.cdf
+*.npy
+*.h5
+*.pkl
