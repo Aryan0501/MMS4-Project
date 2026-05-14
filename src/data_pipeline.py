@@ -108,6 +108,30 @@ def apply_mask(cubes: np.ndarray, mask: np.ndarray, fill: float = 0.0) -> np.nda
     return out
 
 
+def apply_mask_shell_mean(cubes: np.ndarray, mask_per_bin: np.ndarray) -> np.ndarray:
+    """Replace ``mask_per_bin``-True bins with the per-energy-shell visible-bin mean.
+
+    Used in place of the dumb ``fill=0`` to avoid the model-cheat where the
+    network simply outputs 0 wherever it sees 0 in the input. After this fill,
+    the input is a smooth, mean-interpolated continuation of the visible data
+    at every energy; the model can only reduce loss by learning structure that
+    does *better* than the shell-mean.
+
+    Vectorised: handles all timesteps at once.
+    Inputs:
+        cubes : (n, 32, 16, 32) — model-space PSDs
+        mask_per_bin : (32, 16, 32) bool — True where the bin should be replaced
+    """
+    visible = ~mask_per_bin                               # (32, 16, 32)
+    # per-energy: how many visible bins at each E
+    n_vis = visible.reshape(cubes.shape[1], -1).sum(axis=1).clip(min=1)   # (32,)
+    # per-(time, E) sum over visible bins
+    sums = (cubes * visible[None, ...]).reshape(cubes.shape[0], cubes.shape[1], -1).sum(axis=2)
+    shell_mean = sums / n_vis[None, :]                    # (n, 32)
+    fill_field = shell_mean[:, :, None, None] * np.ones((1, 1, cubes.shape[2], cubes.shape[3]))
+    return np.where(visible[None, ...], cubes, fill_field).astype(cubes.dtype)
+
+
 # --- CDF reading -------------------------------------------------------------
 @dataclass
 class FileBatch:
@@ -164,6 +188,7 @@ def build_inputs(
     temporal_window: int = 0,
     with_validity: bool = False,
     always_zero: np.ndarray | None = None,
+    missing_fill: str = "zero",
 ):
     """Assemble (X, Y) arrays for one file.
 
@@ -180,7 +205,13 @@ def build_inputs(
     """
     cubes = fb.cubes                                   # (n, 32,16,32) model space
     n = cubes.shape[0]
-    masked = apply_mask(cubes, mask)                   # occluded bins -> 0
+    # Combine the synthetic mask with the always-zero region so we treat both as
+    # "unreliable input" -- avoids the cheat where the model copies 0 from input.
+    full_unreliable = mask if always_zero is None else (mask | always_zero)
+    if missing_fill == "shell_mean":
+        masked = apply_mask_shell_mean(cubes, full_unreliable)
+    else:
+        masked = apply_mask(cubes, full_unreliable)    # legacy: zero-fill
 
     chans = []
     w = temporal_window

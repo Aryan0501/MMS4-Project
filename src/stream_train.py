@@ -67,6 +67,8 @@ def parse_args():
     p.add_argument("--temporal-window", type=int, default=1)
     p.add_argument("--validity-channel", action="store_true",
                    help="add a binary input channel marking which bins are reliable (visible AND not always-zero)")
+    p.add_argument("--missing-fill", choices=["zero", "shell_mean"], default="zero",
+                   help="how to fill the input at masked + always-zero bins; shell_mean removes the cheat-toward-zero")
     p.add_argument("--keep-files", action="store_true",
                    help="don't delete the CDF after training (debug only; will fill the disk)")
     p.add_argument("--resume", action="store_true",
@@ -175,7 +177,8 @@ def main():
 
     val_dir = os.path.join(args.out, "_val_cache")
     os.makedirs(val_dir, exist_ok=True)
-    az_for_validity = (_load_richness(fake_args)["always_zero"] if args.validity_channel else None)
+    az_for_input = (_load_richness(fake_args)["always_zero"]
+                    if (args.validity_channel or args.missing_fill != "zero") else None)
     for vf in val_files_remote:
         local = local_path(vf, val_dir)
         download(vf, local)
@@ -183,7 +186,8 @@ def main():
         X, Y = dp.build_inputs(fb, mask, use_pitch_angle=use_pa, use_logb=use_lb,
                                 temporal_window=args.temporal_window,
                                 with_validity=args.validity_channel,
-                                always_zero=az_for_validity)
+                                always_zero=az_for_input,
+                                missing_fill=args.missing_fill)
         Xv_list.append(X); Yv_list.append(Y)
         del fb
     Xv = np.concatenate(Xv_list, 0); Yv = np.concatenate(Yv_list, 0)
@@ -250,7 +254,8 @@ def main():
             Xf, Yf = dp.build_inputs(fb, file_mask, use_pitch_angle=use_pa, use_logb=use_lb,
                                       temporal_window=args.temporal_window,
                                       with_validity=args.validity_channel,
-                                      always_zero=az_for_validity)
+                                      always_zero=az_for_input,
+                                      missing_fill=args.missing_fill)
             n_f = Xf.shape[0]
             if replay_X:
                 Xtr = np.concatenate([Xf] + replay_X, 0)

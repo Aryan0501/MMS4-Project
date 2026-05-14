@@ -107,6 +107,12 @@ def parse_args():
                         "where it's been masked or is always-zero. Tells the model directly "
                         "which bins to trust as input vs which to fill in -- avoids the cheat "
                         "where the model just outputs 0 wherever it sees 0 in input.")
+    p.add_argument("--missing-fill", choices=["zero", "shell_mean"], default="zero",
+                   help="value used in the input for synthetic-mask + always-zero bins. "
+                        "'zero' (default, legacy) feeds 0 -- model can shortcut copy. "
+                        "'shell_mean' fills with the per-energy-shell visible-bin mean -- the "
+                        "input is a smooth interpolation in the unreliable region, so the "
+                        "model has to do BETTER than the shell-mean to reduce loss.")
     p.add_argument("--temporal-window", type=int, default=0)
     p.add_argument("--features", default="", help="comma list from {pitch_angle, logb}; unet only")
     p.add_argument("--physics-head", action="store_true", help="unet only: also predict the per-energy spectrum")
@@ -249,11 +255,12 @@ def assemble(fb: dp.FileBatch, mask: np.ndarray, args):
     use_pa, use_lb = _feature_flags(args)
     w = args.temporal_window
     az = None
-    if getattr(args, "validity_channel", False):
+    if getattr(args, "validity_channel", False) or getattr(args, "missing_fill", "zero") != "zero":
         az = _load_richness(args)["always_zero"]
     Xu, Y = dp.build_inputs(fb, mask, use_pitch_angle=use_pa, use_logb=use_lb, temporal_window=w,
                              with_validity=getattr(args, "validity_channel", False),
-                             always_zero=az)
+                             always_zero=az,
+                             missing_fill=getattr(args, "missing_fill", "zero"))
     if args.model in ("unet", "unet_residual"):
         return (Xu, [Y, energy_spectrum_target(Y)]) if args.physics_head else (Xu, Y)
     # convlstm
