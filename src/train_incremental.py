@@ -309,9 +309,9 @@ def main():
     print("[setup] loading validation set ...", flush=True)
     Xv, Yv, cubes_v = load_validation(val_files, mask, args)
     in_channels = 1
-    if args.model == "unet":
+    if args.model in ("unet", "unet_residual", "unet_energy_attn"):
         in_channels = Xv.shape[-1]
-    elif args.model == "jepa":
+    elif args.model in ("jepa", "ijepa"):
         in_channels = Xv[0].shape[-1]
     n_val = (Xv[0].shape[0] if isinstance(Xv, list) else Xv.shape[0])
     print(f"[setup] validation: {n_val} samples; model input channels = {in_channels}", flush=True)
