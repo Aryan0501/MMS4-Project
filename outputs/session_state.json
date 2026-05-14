@@ -1,0 +1,22 @@
+{
+  "events": [
+    {
+      "ts": "2026-05-14T05:36:54+00:00",
+      "kind": "status",
+      "message": "v8 stream running on MMS1 Mar-Apr 2024; 22/872 files done at last check; val_mmse 0.054; PID 21488; out_dir outputs/stream_v8_long_mms1; architecture residual-temporal U-Net + validity channel + shell-mean fill"
+    },
+    {
+      "ts": "2026-05-14T05:38:39+00:00",
+      "kind": "tokens",
+      "message": "+11 (test); total=11"
+    }
+  ],
+  "active_run": {
+    "out_dir": "outputs/stream_v8_long_mms1",
+    "model": "unet_residual",
+    "command": "python src/stream_train.py --start 2024-03-01 --end 2024-04-30 --sc 1 --out outputs/stream_v8_long_mms1 --model unet_residual --temporal-window 2 --base-filters 12 --batch-size 64 --subsample 24 --inner-epochs 1 --replay-cap 1500 --validity-channel --missing-fill shell_mean --resume",
+    "started_at": "2026-05-14T05:36:54+00:00"
+  },
+  "token_total": 11,
+  "token_budget": 150000
+}
