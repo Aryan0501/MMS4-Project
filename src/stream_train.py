@@ -37,7 +37,7 @@ sys.path.insert(0, os.path.join(ROOT, "src"))
 sys.path.insert(0, os.path.join(ROOT, "MMS-FPI-Data-Gaps"))
 
 import data_pipeline as dp
-from model import build_unet3d
+from model import build_unet3d, build_model
 from losses import make_uniform_loss, make_masked_metrics
 from train_incremental import random_wedge, _load_richness, build_mask
 import tensorflow as tf
@@ -62,6 +62,9 @@ def parse_args():
     p.add_argument("--replay-cap", type=int, default=700)
     p.add_argument("--lr", type=float, default=1e-3)
     p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--model", default="unet", choices=["unet", "unet_residual"],
+                   help="architecture: plain unet (1 dist channel) or unet_residual (5 dist channels via temporal_window=2)")
+    p.add_argument("--temporal-window", type=int, default=1)
     p.add_argument("--keep-files", action="store_true",
                    help="don't delete the CDF after training (debug only; will fill the disk)")
     p.add_argument("--resume", action="store_true",
@@ -174,7 +177,8 @@ def main():
         local = local_path(vf, val_dir)
         download(vf, local)
         fb = dp.read_dist_file(local, subsample=args.subsample, with_phi=True)
-        X, Y = dp.build_inputs(fb, mask, use_pitch_angle=use_pa, use_logb=use_lb, temporal_window=1)
+        X, Y = dp.build_inputs(fb, mask, use_pitch_angle=use_pa, use_logb=use_lb,
+                                temporal_window=args.temporal_window)
         Xv_list.append(X); Yv_list.append(Y)
         del fb
     Xv = np.concatenate(Xv_list, 0); Yv = np.concatenate(Yv_list, 0)
@@ -184,9 +188,10 @@ def main():
         Xv, Yv = Xv[sel], Yv[sel]
     print(f"[stream] validation: {Xv.shape[0]} samples cached", flush=True)
 
-    # build model
+    # build model (factory supports both plain U-Net and residual-temporal U-Net)
     in_channels = Xv.shape[-1]
-    model = build_unet3d(base_filters=args.base_filters, input_shape=(32, 16, 32, in_channels))
+    model = build_model(args.model, base_filters=args.base_filters,
+                        in_channels=in_channels, temporal_window=args.temporal_window)
     if args.warm_start and os.path.exists(args.warm_start):
         model.load_weights(args.warm_start)
         print(f"[stream] warm-started from {args.warm_start}", flush=True)
@@ -227,7 +232,7 @@ def main():
             # data-aware random wedge for this file
             file_mask = random_wedge(rng, confine_to=always_data)
             Xf, Yf = dp.build_inputs(fb, file_mask, use_pitch_angle=use_pa, use_logb=use_lb,
-                                      temporal_window=1)
+                                      temporal_window=args.temporal_window)
             n_f = Xf.shape[0]
             if replay_X:
                 Xtr = np.concatenate([Xf] + replay_X, 0)

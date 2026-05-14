@@ -70,25 +70,26 @@ python src/stream_train.py --start 2024-03-01 --end 2024-03-31 --sc 1 \
 - After each run: re-evaluate on the held-out 120-s sample (and others), commit
   the figures and a one-paragraph entry in `MODEL_CHANGELOG.md`.
 
-## Phase 3 — multi-spacecraft  *(~1 month of background runs)*
+## Phase 3 — MMS2/3/4 used for VALIDATION ONLY  *(no training)*
 
-Repeat Phase 2 with `--sc 2`, `--sc 3`, `--sc 4`. Each run warm-starts from the
-previous best model.
+Per user direction: train only on MMS1 to keep the wall-clock budget bounded;
+use the other three spacecraft strictly to **cross-validate** the model.
 
 ```bash
 for sc in 2 3 4; do
-  python src/stream_train.py --start 2024-03-01 --end 2024-03-31 --sc $sc \
-      --warm-start outputs/<latest_best>/model_latest.h5 \
-      --model unet_residual --temporal-window 2 \
-      --features pitch_angle,logb --random-mask --data-aware-mask --gt-only-loss \
-      --out outputs/stream_march_mms${sc}
+  python _evaluate_model.py --ckpt outputs/<latest>/model_latest.h5 \
+      --model unet_residual --temporal-window 2 --base-filters 12 \
+      --features pitch_angle,logb \
+      --data-root <download dir for MMSn> \
+      --out outputs/<latest>/cross_validate_mms${sc}
 done
 ```
-
-- ~16 hours per spacecraft × 4 = **~3 days of CPU**, spread over real-world weeks.
-- Catastrophic-forgetting check after each: run the v3/v4/v6/v7-style 120-s
-  reconstruction on a sample from Phase 1 — make sure the multi-spacecraft
-  model still does well on MMS1's earlier data.
+- Download a small slice (~1 day) of burst data for each of MMS2-4.
+- Run the standard 120-s reconstruction on each.
+- Honest finding: does the model trained on MMS1 generalise to other
+  spacecraft? Compare median \|Δn\|/n across the four. If MMS2-4 are much
+  worse, that's a paper-worthy "trained-on-one-generalises-to-formation"
+  finding either way.
 
 ## Phase 4 — architecture iterations  *(parallel, on the side)*
 
@@ -128,22 +129,26 @@ Follow the structure in `PUBLICATION.md`. Submit arXiv preprint first
 (immediately, as soon as Phase 5 finishes), then AGU26 abstract (deadline
 30 July), then ML4PS workshop paper (~Sept).
 
-## Total time estimate
+## Total time estimate (revised — 1-week training budget)
 
-| Phase | CPU-time | Wall-clock if running ~half the day |
+User constraint: max **1 week of wall-clock training time**, MMS1 only for
+training, MMS2/3/4 for validation only.
+
+| Phase | CPU-time | Wall-clock |
 |---|---|---|
-| 0 | ~3 hours | this week |
-| 1 | ~1 hour | tonight |
-| 2 | ~50 hours | ~2 weeks |
-| 3 | ~150 hours | ~6 weeks |
-| 4 | ~30 hours | parallel during 2-3 |
-| 5 | ~15 hours | 2 weeks after Phase 3 |
-| 6 | ~30 hours of writing | 3 weeks |
-| **Total to first paper submission** | | **~3 months** |
+| 0 (last-mile fixes) | ~3 hours | this week |
+| 1 (v7 trial) | (subsumed into Phase 2's stream which uses the v7 architecture) | — |
+| 2 (stream MMS1 Mar+Apr 2024, ~900 files) | ~30 hours | **~1 week wall-clock** |
+| 3 (MMS2/3/4 validation only) | ~3 hours | 1 day |
+| 4 (architecture iterations, parallel) | ~10 hours | overlaps Phase 2 |
+| 5 (multi-event paper-grade eval + literature baselines) | ~15 hours | 2 weeks |
+| 6 (paper writing) | ~30 hours of writing | 3 weeks |
+| **Total to first submission** | | **~6-7 weeks** |
 
-If you want to compress to ~1 month, **rent a GPU box for one weekend**
-(Lambda Labs A100 ~$1.10/hr × 48 hr = $55) and run Phases 2-4 in that window.
-Everything else is unchanged.
+Phase 2 (the heavy stream) was just launched (`outputs/stream_long_mms1/`).
+Architecture is residual-temporal U-Net (v7 design); throttling + retry are in
+place; resume support handles laptop sleep. Run it for 1 week, then evaluate
+whatever was completed.
 
 ## Practical workflow each session
 
