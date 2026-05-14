@@ -198,10 +198,17 @@ def build_model(name: str, base_filters: int = 16, in_channels: int = 1,
     if name == "unet":
         return build_unet3d(base_filters, input_shape=(32, 16, 32, in_channels),
                             physics_head=physics_head)
+    if name == "unet_residual":
+        return build_residual_temporal_unet(base_filters, in_channels=in_channels,
+                                             temporal_window=temporal_window)
+    if name == "unet_energy_attn":
+        return build_energy_attention_unet(base_filters, in_channels=in_channels)
     if name == "convlstm":
         return build_convlstm(base_filters, n_time=max(3, 2 * temporal_window + 1))
     if name == "jepa":
         return build_jepa(base_filters, in_channels)
+    if name == "ijepa":
+        return build_ijepa(base_filters, in_channels)
     raise ValueError(f"unknown model {name!r}")
 
 
@@ -257,6 +264,54 @@ def build_ijepa(base_filters: int = 16, in_channels: int = 1):
 # --------------------------------------------------------------------------- #
 #  Energy-axis attention U-Net                                                  #
 # --------------------------------------------------------------------------- #
+def build_residual_temporal_unet(base_filters: int = 16, in_channels: int = 5,
+                                  temporal_window: int = 2) -> Model:
+    """Residual U-Net with explicit temporal context.
+
+    The temporal-variance diagnostic in `outputs/stream_week_mar2024/temporal_variance.png`
+    showed that the plain U-Net's predictions in the masked region are ~3-4× flatter in
+    time than truth — the model's outputs barely vary across the 120-s burst even when
+    the truth changes a lot. Two design changes here address that:
+
+    1. **Residual connection from the centre frame to the output.** Instead of mapping
+       (visible cube) → (full cube) from scratch, the model maps to a small *correction*
+       added on top of the centre-frame's masked input. Whatever frame-to-frame variation
+       is in the input is preserved by construction; the U-Net only has to learn the
+       inpainting delta.
+
+    2. **Wider temporal window** (default ``temporal_window=2`` → 5-frame stack of t-2..t+2,
+       caller stacks them as input channels). Gives the model more frame-to-frame context
+       so it has more signal to vary the prediction with.
+
+    Input shape ``(32, 16, 32, in_channels)`` — caller is expected to stack
+    ``2*temporal_window+1`` masked-dist channels plus any feature channels (e.g.
+    pitch_angle + log|B|), so for ``temporal_window=2`` and pa+lb features
+    ``in_channels = 5 + 2 = 7``. The CENTRE temporal channel is taken to be index
+    ``temporal_window`` (i.e. channel 2 for window=2).
+    """
+    pool = (2, 1, 2)
+    inp = layers.Input(shape=(32, 16, 32, in_channels), name="dist_in")
+    e1 = _conv_block(inp, base_filters, "enc1")
+    p1 = layers.MaxPool3D(pool, name="pool1")(e1)
+    e2 = _conv_block(p1, base_filters * 2, "enc2")
+    p2 = layers.MaxPool3D(pool, name="pool2")(e2)
+    b = _conv_block(p2, base_filters * 4, "bottleneck")
+    u2 = layers.UpSampling3D(pool, name="up2")(b)
+    u2 = layers.Concatenate(name="skip2")([u2, e2])
+    d2 = _conv_block(u2, base_filters * 2, "dec2")
+    u1 = layers.UpSampling3D(pool, name="up1")(d2)
+    u1 = layers.Concatenate(name="skip1")([u1, e1])
+    d1 = _conv_block(u1, base_filters, "dec1")
+    correction = layers.Conv3D(1, 1, padding="same", activation="tanh", name="correction")(d1)
+    # residual: prediction = sigmoid(centre_input + small_correction).
+    # Slice the centre temporal channel so this works whether window=1, 2, or 3.
+    centre_idx = temporal_window
+    centre = layers.Lambda(lambda t: t[..., centre_idx:centre_idx + 1], name="centre_in")(inp)
+    summed = layers.Add(name="add_residual")([centre, correction])
+    out = layers.Activation("sigmoid", name="dist_out")(summed)
+    return Model(inp, out, name="unet3d_residual_temporal")
+
+
 def build_energy_attention_unet(base_filters: int = 16, in_channels: int = 1) -> Model:
     """3-D U-Net with a self-attention block over the ENERGY axis at the bottleneck.
 

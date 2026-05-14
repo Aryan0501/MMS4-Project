@@ -172,6 +172,14 @@ Results filled in §8j of RESULTS.md when training finishes.
 
 ## Auxiliary models *(implemented + smoke-tested, not yet run on CPU)*
 
+- **Residual-temporal U-Net** (`src/model.py:build_residual_temporal_unet`,
+  `--model unet_residual --temporal-window 2`): the architectural answer to the
+  v6 temporal-variance finding (model predictions ~3-4× flatter in time than truth).
+  Two design changes: (1) **residual connection** from the centre temporal frame to
+  the output — the model only learns the *correction* on top of the input, so any
+  frame-to-frame variation is preserved by construction; (2) **wider temporal
+  window** (default 2 → 5-frame stack) so the model has more variance to draw on.
+  140 K params at base_filters=10. Smoke-tested.
 - **I-JEPA proper** (`src/model.py:build_ijepa`): separate EMA target encoder
   (0.99 momentum) + invariance loss + VICReg-style variance and covariance
   regularisation. The properly-resourced version of JEPA-lite. Returns

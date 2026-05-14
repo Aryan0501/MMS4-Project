@@ -79,39 +79,60 @@ def list_burst_files(sc, start, end):
     return [f for f in r.text.strip().split(",") if f.endswith(".cdf")]
 
 
-def download(name, dest):
-    """Download `name` from SDC to `dest`.
+def download(name, dest, max_retries: int = 5, throttle_s: float = 1.0):
+    """Download `name` from SDC to `dest`, with retries + throttling.
 
     The SDC /file_names/science endpoint returns path-prefixed names like
     'mms/data/mms1/fpi/.../file.cdf', but /download/science only works with the
-    BARE filename — passing the path-prefixed one silently returns 204 No
-    Content. So we strip to basename before requesting.
+    BARE filename — passing the path-prefixed one silently returns 204 No Content.
+    Strip to basename. Adds:
+      - Polite throttling between requests (default 1 s) so the SDC doesn't
+        rate-limit us.
+      - Exponential backoff on HTTP 429 (Too Many Requests) up to ~64 s.
+      - Up to ``max_retries`` attempts before giving up.
     """
+    import time as _time
     if os.path.exists(dest) and os.path.getsize(dest) > 0:
         return
     os.makedirs(os.path.dirname(dest), exist_ok=True)
     tmp = dest + ".part"
     bare = os.path.basename(name)
-    with requests.get(f"{SDC}/download/science", params={"file": bare}, stream=True, timeout=600) as r:
-        r.raise_for_status()
-        if r.status_code == 204 or r.headers.get("Content-Length") in ("0", None):
-            # try the about/browse direct URL as a fallback
-            # parse filename: mms<N>_<instr>_brst_l2_<descriptor>_<YYYYMMDD...>_v...cdf
-            parts = bare.split("_")
-            sc, instr, _, level, desc = parts[0], parts[1], parts[2], parts[3], parts[4]
-            stamp = parts[5]
-            yyyy, mm, dd = stamp[:4], stamp[4:6], stamp[6:8]
-            url2 = (f"https://lasp.colorado.edu/mms/sdc/public/about/browse/"
-                    f"{sc}/{instr}/brst/{level}/{desc}/{yyyy}/{mm}/{dd}/{bare}")
-            r2 = requests.get(url2, stream=True, timeout=600); r2.raise_for_status()
-            with open(tmp, "wb") as fh:
-                for chunk in r2.iter_content(chunk_size=1 << 20): fh.write(chunk)
-        else:
-            with open(tmp, "wb") as fh:
-                for chunk in r.iter_content(chunk_size=1 << 20): fh.write(chunk)
-    if os.path.getsize(tmp) == 0:
-        os.remove(tmp); raise RuntimeError(f"got 0-byte download for {bare}")
-    os.replace(tmp, dest)
+
+    backoff = throttle_s
+    for attempt in range(max_retries):
+        try:
+            _time.sleep(throttle_s)        # always pause between requests
+            with requests.get(f"{SDC}/download/science",
+                              params={"file": bare}, stream=True, timeout=600) as r:
+                if r.status_code == 429:
+                    backoff = min(64.0, max(backoff * 2, 4.0))
+                    print(f"  [throttle] 429 from SDC, backing off {backoff:.0f}s ...", flush=True)
+                    _time.sleep(backoff)
+                    continue
+                r.raise_for_status()
+                if r.status_code == 204 or r.headers.get("Content-Length") in ("0", None):
+                    # fallback: about/browse direct URL
+                    parts = bare.split("_")
+                    sc, instr, _, level, desc = parts[0], parts[1], parts[2], parts[3], parts[4]
+                    stamp = parts[5]; yyyy, mm, dd = stamp[:4], stamp[4:6], stamp[6:8]
+                    url2 = (f"https://lasp.colorado.edu/mms/sdc/public/about/browse/"
+                            f"{sc}/{instr}/brst/{level}/{desc}/{yyyy}/{mm}/{dd}/{bare}")
+                    r2 = requests.get(url2, stream=True, timeout=600); r2.raise_for_status()
+                    with open(tmp, "wb") as fh:
+                        for chunk in r2.iter_content(chunk_size=1 << 20): fh.write(chunk)
+                else:
+                    with open(tmp, "wb") as fh:
+                        for chunk in r.iter_content(chunk_size=1 << 20): fh.write(chunk)
+            if os.path.getsize(tmp) == 0:
+                os.remove(tmp); raise RuntimeError(f"got 0-byte download for {bare}")
+            os.replace(tmp, dest)
+            return
+        except (requests.HTTPError, requests.ConnectionError, requests.Timeout) as e:
+            if attempt == max_retries - 1:
+                raise
+            print(f"  [retry] download {bare}: {e} (attempt {attempt+1}/{max_retries})", flush=True)
+            _time.sleep(backoff)
+            backoff = min(64.0, backoff * 2)
 
 
 def local_path(name, base_dir):

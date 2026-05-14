@@ -81,7 +81,7 @@ def parse_args():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--data-root", default="MMS-FPI-Data-Gaps")
     p.add_argument("--out", default="outputs/run1")
-    p.add_argument("--model", choices=["unet", "convlstm", "jepa"], default="unet")
+    p.add_argument("--model", choices=["unet", "unet_residual", "convlstm", "jepa"], default="unet")
     p.add_argument("--mask", choices=["wedge", "explosion"], default="wedge")
     p.add_argument("--random-mask", action="store_true",
                    help="sample a new random wedge position for every training file "
@@ -243,7 +243,7 @@ def assemble(fb: dp.FileBatch, mask: np.ndarray, args):
     use_pa, use_lb = _feature_flags(args)
     w = args.temporal_window
     Xu, Y = dp.build_inputs(fb, mask, use_pitch_angle=use_pa, use_logb=use_lb, temporal_window=w)
-    if args.model == "unet":
+    if args.model in ("unet", "unet_residual"):
         return (Xu, [Y, energy_spectrum_target(Y)]) if args.physics_head else (Xu, Y)
     # convlstm
     n_time = max(3, 2 * w + 1)
@@ -275,7 +275,7 @@ def load_validation(val_files, mask, args):
     if args.model == "jepa":
         X = [np.concatenate([x[0] for x in Xs], 0), np.concatenate([x[1] for x in Xs], 0)]
         Y = np.concatenate(Ys, 0)
-    elif args.model == "unet" and args.physics_head:
+    elif args.model in ("unet", "unet_residual") and args.physics_head:
         X = np.concatenate(Xs, 0)
         Y = [np.concatenate([y[0] for y in Ys], 0), np.concatenate([y[1] for y in Ys], 0)]
     else:
@@ -346,7 +346,7 @@ def main():
         model.compile(optimizer=tf.keras.optimizers.Adam(args.lr),
                       loss=make_uniform_loss(gt_only=gt_only),
                       metrics=make_masked_metrics(mask, gt_only=gt_only))
-    elif args.model == "unet" and args.physics_head:
+    elif args.model in ("unet", "unet_residual") and args.physics_head:
         model.compile(optimizer=tf.keras.optimizers.Adam(args.lr),
                       loss={"dist_out": make_masked_loss(mask, gt_only=gt_only), "spectrum_out": "mse"},
                       loss_weights={"dist_out": 1.0, "spectrum_out": 0.1},
