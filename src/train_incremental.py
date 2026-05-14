@@ -101,6 +101,12 @@ def parse_args():
                         "ever has to inpaint bins where we have ground truth -- and we trust "
                         "it on the truly-missing bins for free, because they share the same "
                         "input statistics. Pairs naturally with --gt-only-loss.")
+    p.add_argument("--validity-channel", action="store_true",
+                   help="add an explicit binary 'validity' channel as the last input channel: "
+                        "1 where the input PSD is reliable (visible AND not always-zero), 0 "
+                        "where it's been masked or is always-zero. Tells the model directly "
+                        "which bins to trust as input vs which to fill in -- avoids the cheat "
+                        "where the model just outputs 0 wherever it sees 0 in input.")
     p.add_argument("--temporal-window", type=int, default=0)
     p.add_argument("--features", default="", help="comma list from {pitch_angle, logb}; unet only")
     p.add_argument("--physics-head", action="store_true", help="unet only: also predict the per-energy spectrum")
@@ -242,7 +248,12 @@ def assemble(fb: dp.FileBatch, mask: np.ndarray, args):
 
     use_pa, use_lb = _feature_flags(args)
     w = args.temporal_window
-    Xu, Y = dp.build_inputs(fb, mask, use_pitch_angle=use_pa, use_logb=use_lb, temporal_window=w)
+    az = None
+    if getattr(args, "validity_channel", False):
+        az = _load_richness(args)["always_zero"]
+    Xu, Y = dp.build_inputs(fb, mask, use_pitch_angle=use_pa, use_logb=use_lb, temporal_window=w,
+                             with_validity=getattr(args, "validity_channel", False),
+                             always_zero=az)
     if args.model in ("unet", "unet_residual"):
         return (Xu, [Y, energy_spectrum_target(Y)]) if args.physics_head else (Xu, Y)
     # convlstm

@@ -162,6 +162,8 @@ def build_inputs(
     use_pitch_angle: bool = False,
     use_logb: bool = False,
     temporal_window: int = 0,
+    with_validity: bool = False,
+    always_zero: np.ndarray | None = None,
 ):
     """Assemble (X, Y) arrays for one file.
 
@@ -197,6 +199,18 @@ def build_inputs(
             chans.append(pa)
         if use_logb:
             chans.append(lb)
+
+    if with_validity:
+        # 1 where the bin is RELIABLE input (visible AND not always-zero); 0 otherwise.
+        # Tells the model "trust this bin's input value or not", solving the
+        # ambiguity between (a) synthetic-mask bin, (b) naturally-zero bin, and
+        # (c) genuinely-low-PSD bin -- all of which would otherwise be 0 in input.
+        n = cubes.shape[0]
+        v = np.ones((n, *cubes.shape[1:]), dtype=np.float32)
+        v[:, mask] = 0.0
+        if always_zero is not None:
+            v[:, always_zero] = 0.0
+        chans.append(v)
 
     X = np.stack(chans, axis=-1).astype(np.float32)    # (n, 32,16,32, C)
     Y = cubes[..., None]
