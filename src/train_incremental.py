@@ -73,7 +73,7 @@ import tensorflow as tf
 
 import data_pipeline as dp
 from model import build_model, bottleneck_encoder
-from losses import make_masked_loss, make_masked_metrics, energy_spectrum_target, jepa_loss, make_uniform_loss
+from losses import make_masked_loss, make_masked_metrics, energy_spectrum_target, jepa_loss, make_uniform_loss, make_moments_aware_loss
 from baseline import evaluate_baselines
 
 
@@ -81,7 +81,7 @@ def parse_args():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--data-root", default="MMS-FPI-Data-Gaps")
     p.add_argument("--out", default="outputs/run1")
-    p.add_argument("--model", choices=["unet", "unet_residual", "convlstm", "jepa"], default="unet")
+    p.add_argument("--model", choices=["unet", "unet_residual", "unet_residual_attn", "convlstm", "jepa"], default="unet")
     p.add_argument("--mask", choices=["wedge", "explosion"], default="wedge")
     p.add_argument("--random-mask", action="store_true",
                    help="sample a new random wedge position for every training file "
@@ -113,6 +113,11 @@ def parse_args():
                         "'shell_mean' fills with the per-energy-shell visible-bin mean -- the "
                         "input is a smooth interpolation in the unreliable region, so the "
                         "model has to do BETTER than the shell-mean to reduce loss.")
+    p.add_argument("--moments-loss", action="store_true",
+                   help="add a density-consistency penalty to the loss: |sum(pred) - sum(truth)|^2 "
+                        "computed on the data-rich bins only. Encourages the model to preserve "
+                        "the integrated-per-energy density that is what we actually care about "
+                        "physically, not just pixel MSE.")
     p.add_argument("--temporal-window", type=int, default=0)
     p.add_argument("--features", default="", help="comma list from {pitch_angle, logb}; unet only")
     p.add_argument("--physics-head", action="store_true", help="unet only: also predict the per-energy spectrum")
@@ -327,7 +332,7 @@ def main():
     print("[setup] loading validation set ...", flush=True)
     Xv, Yv, cubes_v = load_validation(val_files, mask, args)
     in_channels = 1
-    if args.model in ("unet", "unet_residual", "unet_energy_attn"):
+    if args.model in ("unet", "unet_residual", "unet_residual_attn", "unet_energy_attn"):
         in_channels = Xv.shape[-1]
     elif args.model in ("jepa", "ijepa"):
         in_channels = Xv[0].shape[-1]
@@ -360,9 +365,12 @@ def main():
         # mask varies per file -- can't use the mask-aware weighted loss; uniform MSE
         # over the cube is what teaches the model "fill in whatever is zero". With
         # --gt-only-loss the always-zero bins are excluded so the model never gets
-        # punished for putting non-zero predictions there.
+        # punished for putting non-zero predictions there. With --moments-loss, also
+        # add a per-energy density-consistency penalty.
+        loss_fn = (make_moments_aware_loss(mask, gt_only=gt_only)
+                   if args.moments_loss else make_uniform_loss(gt_only=gt_only))
         model.compile(optimizer=tf.keras.optimizers.Adam(args.lr),
-                      loss=make_uniform_loss(gt_only=gt_only),
+                      loss=loss_fn,
                       metrics=make_masked_metrics(mask, gt_only=gt_only))
     elif args.model in ("unet", "unet_residual") and args.physics_head:
         model.compile(optimizer=tf.keras.optimizers.Adam(args.lr),

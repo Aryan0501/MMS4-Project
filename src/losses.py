@@ -55,6 +55,42 @@ def make_masked_loss(mask, masked_weight: float = 10.0, signal_weight: float = 1
     return loss
 
 
+def make_moments_aware_loss(mask, gt_only: np.ndarray | None = None,
+                             moments_weight: float = 0.05):
+    """Uniform MSE on data-rich bins + a density-consistency penalty.
+
+    The reconstruction MSE alone doesn't directly enforce that the integrated
+    density (sum over angles, per energy) of the prediction matches the true
+    density. Adding ``|sum(pred * data_rich) - sum(truth * data_rich)|^2``
+    nudges the model to preserve the moment that actually matters physically.
+
+    The data-rich constraint matters: integrating over always-zero bins would
+    pull the prediction toward zero in those bins, which we explicitly want to
+    avoid (that's the same cheat from RESULTS §8i).
+    """
+    v = (None if gt_only is None
+         else tf.constant(gt_only.astype("float32")[None, ..., None]))
+
+    def loss(y_true, y_pred):
+        diff_sq = K.square(y_true - y_pred)
+        if v is None:
+            recon = K.mean(diff_sq)
+        else:
+            recon = K.sum(v * diff_sq, axis=[1, 2, 3, 4]) / (K.sum(v) + 1e-9)
+            recon = K.mean(recon)
+        # density per (sample, energy) from the data-rich bins only
+        if v is None:
+            sum_t = K.sum(y_true, axis=[2, 3, 4])
+            sum_p = K.sum(y_pred, axis=[2, 3, 4])
+        else:
+            sum_t = K.sum(v * y_true, axis=[2, 3, 4])
+            sum_p = K.sum(v * y_pred, axis=[2, 3, 4])
+        moments = K.mean(K.square(sum_t - sum_p) / (K.square(sum_t) + 1e-6))
+        return recon + moments_weight * moments
+
+    return loss
+
+
 def make_uniform_loss(gt_only: np.ndarray | None = None):
     """Plain MSE over the cube, optionally excluding always-zero bins.
 

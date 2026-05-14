@@ -50,6 +50,10 @@ def parse_args():
     p.add_argument("--temporal-window", type=int, default=1)
     p.add_argument("--base-filters", type=int, default=10)
     p.add_argument("--features", default="pitch_angle,logb")
+    p.add_argument("--validity-channel", action="store_true",
+                   help="match training: include the binary validity channel as last input")
+    p.add_argument("--missing-fill", choices=["zero", "shell_mean"], default="zero",
+                   help="match training: how unreliable input bins are filled")
     p.add_argument("--out", default=None)
     p.add_argument("--data-root", default=os.path.join(ROOT, "MMS-FPI-Data-Gaps"))
     return p.parse_args()
@@ -80,13 +84,16 @@ def density_data_rich(cube, always_data, n=None):
     return density(masked, n)
 
 
-def evaluate_one_sample(model, args, mask_default, fb, sub_idx, w):
+def evaluate_one_sample(model, args, mask_default, fb, sub_idx, w, always_zero=None):
     """Run model on one 120-s sample. Returns dict of arrays."""
     use_pa, use_lb = feature_flags(args)
     fb.cubes = fb.cubes[sub_idx]; fb.epoch = fb.epoch[sub_idx]
     if hasattr(fb, "phi"): fb.phi = fb.phi[sub_idx]
     X, Y = dp.build_inputs(fb, mask_default, use_pitch_angle=use_pa, use_logb=use_lb,
-                            temporal_window=w)
+                            temporal_window=w,
+                            with_validity=getattr(args, "validity_channel", False),
+                            always_zero=always_zero,
+                            missing_fill=getattr(args, "missing_fill", "zero"))
     P = predict_for_window(model, X)
     y_cube = Y[..., 0]
     inpaint = y_cube.copy(); inpaint[:, mask_default] = P[:, mask_default]
@@ -101,19 +108,22 @@ def main():
     os.makedirs(out_dir, exist_ok=True)
     print(f"[eval] ckpt: {args.ckpt}\n[eval] out:  {out_dir}", flush=True)
 
-    # build model + load weights
+    # build model + load weights — match the input-channel count used at training
     use_pa, use_lb = feature_flags(args)
-    in_channels = (2 * args.temporal_window + 1) + int(use_pa) + int(use_lb)
+    in_channels = (2 * args.temporal_window + 1) + int(use_pa) + int(use_lb) + int(args.validity_channel)
     model = build_model(args.model, base_filters=args.base_filters,
                         in_channels=in_channels, temporal_window=args.temporal_window)
     if isinstance(model, tuple):  # jepa returns a tuple
         model = model[0]
     model.load_weights(args.ckpt)
+    print(f"[eval] in_channels={in_channels} (validity={args.validity_channel}, fill={args.missing_fill})", flush=True)
 
     files = dp.find_dist_files(args.data_root)
     _, val_files = dp.split_files(files, val_fraction=0.2, seed=0)
     richness = dict(np.load(os.path.join(ROOT, "outputs", "data_richness.npz")))
     always_data = richness["always_data"]
+    always_zero = richness["always_zero"]
+    az_for_input = always_zero if (args.validity_channel or args.missing_fill != "zero") else None
     mask_default = dp.synthetic_wedge_mask()
     SUB = 12; DUR_S = 120.0
 
@@ -131,7 +141,8 @@ def main():
         n_keep = min(n_needed, fb.n_samples)
         t0 = 0 if fb.n_samples < n_needed else int(rng.integers(0, fb.n_samples - n_keep + 1))
         idx = np.arange(t0, t0 + n_keep)
-        ev = evaluate_one_sample(model, args, mask_default, fb, idx, args.temporal_window)
+        ev = evaluate_one_sample(model, args, mask_default, fb, idx, args.temporal_window,
+                                  always_zero=az_for_input)
         ev["chosen"] = chosen; ev["t0"] = t0; ev["seed"] = seed
         seed_panels.append(ev)
     # plot 3-row gallery, one row per seed, columns = TRUE / MASKED / IMPUTED / FULLY IMPUTED at frame 50

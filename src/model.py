@@ -201,6 +201,9 @@ def build_model(name: str, base_filters: int = 16, in_channels: int = 1,
     if name == "unet_residual":
         return build_residual_temporal_unet(base_filters, in_channels=in_channels,
                                              temporal_window=temporal_window)
+    if name == "unet_residual_attn":
+        return build_residual_temporal_energy_attn_unet(base_filters, in_channels=in_channels,
+                                                         temporal_window=temporal_window)
     if name == "unet_energy_attn":
         return build_energy_attention_unet(base_filters, in_channels=in_channels)
     if name == "convlstm":
@@ -310,6 +313,43 @@ def build_residual_temporal_unet(base_filters: int = 16, in_channels: int = 5,
     summed = layers.Add(name="add_residual")([centre, correction])
     out = layers.Activation("sigmoid", name="dist_out")(summed)
     return Model(inp, out, name="unet3d_residual_temporal")
+
+
+def build_residual_temporal_energy_attn_unet(
+        base_filters: int = 16, in_channels: int = 7, temporal_window: int = 2) -> Model:
+    """v9 architecture: residual-temporal U-Net + 4-head self-attention over the
+    energy axis at the bottleneck.
+
+    Combines two earlier ideas that should be additive:
+      - residual head from the centre temporal frame (the v7 fix for temporal flatness)
+      - energy-axis self-attention at the bottleneck (long-range coupling between
+        adjacent energy bins that 3-D conv locality misses; an electron beam at one
+        energy correlates with adjacent energies, etc.)
+    """
+    pool = (2, 1, 2)
+    inp = layers.Input(shape=(32, 16, 32, in_channels), name="dist_in")
+    e1 = _conv_block(inp, base_filters, "enc1")
+    p1 = layers.MaxPool3D(pool, name="pool1")(e1)
+    e2 = _conv_block(p1, base_filters * 2, "enc2")
+    p2 = layers.MaxPool3D(pool, name="pool2")(e2)
+    b = _conv_block(p2, base_filters * 4, "bottleneck")
+    # energy-axis attention block at the bottleneck (same form as build_energy_attention_unet)
+    shape = tf.keras.backend.int_shape(b)
+    seq = layers.Reshape((shape[1], shape[2] * shape[3] * shape[4]), name="b_to_seq")(b)
+    seq = layers.LayerNormalization(name="b_ln")(seq)
+    seq = layers.MultiHeadAttention(num_heads=4, key_dim=max(8, base_filters), name="b_attn")(seq, seq)
+    b_attn = layers.Reshape(shape[1:], name="seq_to_b")(seq)
+    b = layers.Add(name="b_add")([b, b_attn])
+    u2 = layers.UpSampling3D(pool, name="up2")(b)
+    u2 = layers.Concatenate(name="skip2")([u2, e2])
+    d2 = _conv_block(u2, base_filters * 2, "dec2")
+    u1 = layers.UpSampling3D(pool, name="up1")(d2)
+    u1 = layers.Concatenate(name="skip1")([u1, e1])
+    d1 = _conv_block(u1, base_filters, "dec1")
+    correction = layers.Conv3D(1, 1, padding="same", activation="tanh", name="correction")(d1)
+    centre = layers.Lambda(lambda t: t[..., temporal_window:temporal_window + 1], name="centre_in")(inp)
+    out = layers.Activation("sigmoid", name="dist_out")(layers.Add(name="add_residual")([centre, correction]))
+    return Model(inp, out, name="unet3d_v9_residual_energy_attn")
 
 
 def build_energy_attention_unet(base_filters: int = 16, in_channels: int = 1) -> Model:

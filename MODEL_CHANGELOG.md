@@ -148,6 +148,47 @@ scratch by the `src/` pipeline that v2–v4 use.
 
 ---
 
+## v9 · `unet_residual_attn` *(implemented + smoke-tested)* — residual + energy-attention
+
+Hybrid of v7 + the energy-attention block at the bottleneck:
+- residual head from the centre temporal frame (preserves frame-to-frame variation)
+- 4-head self-attention over the energy axis at the bottleneck (long-range bin-to-bin
+  coupling that pure 3-D conv locality misses — beam at one energy correlates with
+  adjacent energies)
+- ~976 K parameters at base_filters=10 (5× larger than v7) — closer to "wants a GPU
+  but works on CPU with smaller subsample"
+
+Wired into `build_model('unet_residual_attn', ...)` and `--model unet_residual_attn`.
+Not yet trained; v8 stream still in flight.
+
+## v8 · `stream_v8_long_mms1` *(training now — heavy stream)*
+
+The current heavy run. Architecture is residual-temporal U-Net (v7 design) with TWO
+data-side fixes that the user identified as crucial:
+
+- `--validity-channel`: explicit binary input channel telling the model which bins
+  are reliable (visible AND not always-zero) vs unreliable (masked OR always-zero).
+  Solves the ambiguity where 0 in input could mean "synthetic mask," "always-zero
+  bin," or "real low PSD."
+- `--missing-fill shell_mean`: input at unreliable bins is the per-energy-shell
+  visible-bin mean, NOT literal 0. The model has no shortcut to "predict 0 because
+  input is 0" — it has to do BETTER than the shell-mean to reduce loss.
+
+8 input channels: 5 dist (temporal_window=2) + pitch_angle + log\|B\| + validity.
+
+Streaming on MMS1 burst Mar 1 – Apr 30 2024, 872 train files + 4 val files cached
+(~350 GB streamed total, peak disk ~0.4 GB). Started 2026-05-14 00:33; expected
+completion ~3 days at ~2 min/file with intermittent laptop sleeps.
+
+Live progress in `outputs/stream_v8_long_mms1.log` and `history.json`.
+
+Plus this session also added:
+- **Moments-aware loss** (`--moments-loss` in `make_moments_aware_loss`):
+  per-energy density-consistency penalty alongside the standard MSE. Forces the
+  model to preserve the integrated quantity that matters physically.
+- **`_evaluate_model.py`** updated to accept `--validity-channel` and
+  `--missing-fill` so v8/v9 can be evaluated correctly.
+
 ## v5 · `unet_v5` *(training now)* — random data-aware masks + uniform gt-only loss
 *Launched 2026-05-13 18:00. Training in background, ~50 min.*
 
