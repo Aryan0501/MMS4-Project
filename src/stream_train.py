@@ -204,8 +204,10 @@ def main():
 
     # resume state
     hist_path = os.path.join(args.out, "history.json")
+    replay_path = os.path.join(args.out, "replay.npz")
     history = []
     completed = set()
+    replay_X, replay_Y = [], []
     if args.resume and os.path.exists(hist_path):
         history = json.load(open(hist_path))["history"]
         completed = {r["file"] for r in history}
@@ -214,8 +216,17 @@ def main():
             model.load_weights(ckpt)
             print(f"[stream] RESUMED: {len(completed)} files already done, model weights loaded",
                   flush=True)
-
-    replay_X, replay_Y = [], []
+        if os.path.exists(replay_path):
+            z = np.load(replay_path)
+            i = 0
+            while f"X_{i}" in z:
+                replay_X.append(z[f"X_{i}"]); replay_Y.append(z[f"Y_{i}"]); i += 1
+            tot = sum(a.shape[0] for a in replay_X)
+            print(f"[stream] RESUMED: replay buffer = {tot} samples from {len(replay_X)} prior files",
+                  flush=True)
+        else:
+            print("[stream] RESUMED: no replay buffer on disk (older run); starts empty",
+                  flush=True)
     step = len(history); t0 = time.time()
     always_data = richness["always_data"]
 
@@ -266,6 +277,10 @@ def main():
             model.save(os.path.join(args.out, "model_latest.h5"))
             with open(hist_path, "w") as fh:
                 json.dump({"args": vars(args), "history": history}, fh, indent=2)
+            # save replay buffer so a resumed run keeps its catastrophic-forgetting protection
+            buf = {f"X_{i}": x for i, x in enumerate(replay_X)}
+            buf.update({f"Y_{i}": y for i, y in enumerate(replay_Y)})
+            np.savez(replay_path, **buf)
         except Exception as e:
             print(f"[stream] file failed: {fname}  -> {e}", flush=True)
             history.append(dict(step=step + 1, file=fname, error=str(e)))
